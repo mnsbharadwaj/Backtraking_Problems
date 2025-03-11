@@ -1,3 +1,4 @@
+/*Find a cycle that visits every node exactly once and returns to the start.*/
 #include <stdio.h>
 #include <stdbool.h>
 
