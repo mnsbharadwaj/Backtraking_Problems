@@ -1,202 +1,185 @@
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 #include <libkeccak.h>
 
-// Function to print Keccak state
-void print_state(const uint64_t state[25], const char *label) {
-    printf("\n%s (State):\n", label);
-    for (int i = 0; i < 5; i++) {
-        for (int j = 0; j < 5; j++) {
-            printf("%016lx ", state[i*5 + j]);
-        }
-        printf("\n");
-    }
-}
-
-// Compute SHA3-256 hash from intermediate state
-void sha3_256_from_intermediate(uint8_t *output, 
-                                const uint64_t intermediate_state[25],
-                                const uint8_t *data, 
-                                size_t data_len,
-                                int print_intermediate) {
-    libkeccak_state_t state;
-    libkeccak_spec_t spec;
-    
-    // Set SHA3-256 parameters
-    spec.bitrate = 1088;
-    spec.capacity = 512;
-    spec.output = 256;  // Output length in bits
-    
-    // Initialize state
-    if (libkeccak_state_initialise(&state, &spec) < 0) {
-        fprintf(stderr, "State initialization failed\n");
-        return;
-    }
-    
-    // Copy intermediate state (25 uint64_t values)
-    memcpy(&state.S, intermediate_state, 25 * sizeof(uint64_t));
-    
-    // Reset buffer position (assumes we're at block boundary)
-    state.m = 0;
-    
-    if (print_intermediate) 
-        print_state((uint64_t*)&state.S, "Restored State");
-    
-    // Process additional data
-    size_t block_size = spec.bitrate / 8;
-    size_t offset = 0;
-    
-    while (offset < data_len) {
-        size_t chunk_size = (data_len - offset > block_size) 
-                            ? block_size : data_len - offset;
-        
-        // Process chunk
-        if (libkeccak_update(&state, data + offset, chunk_size) < 0) {
-            fprintf(stderr, "Update failed\n");
-            return;
-        }
-        offset += chunk_size;
-        
-        if (print_intermediate) {
-            printf("\nAbsorbed %zu bytes", chunk_size);
-            print_state((uint64_t*)&state.S, "After Absorption");
-        }
-    }
-    
-    // Apply SHA3 padding (0x06)
-    uint8_t pad = 0x06;
-    if (libkeccak_update(&state, &pad, 1) < 0) {
-        fprintf(stderr, "Padding failed\n");
-        return;
-    }
-    
-    // Final bit (0x80)
-    uint8_t final_bit = 0x80;
-    if (libkeccak_update(&state, &final_bit, 1) < 0) {
-        fprintf(stderr, "Final bit failed\n");
-        return;
-    }
-    
-    if (print_intermediate) 
-        print_state((uint64_t*)&state.S, "After Padding");
-    
-    // Final digest with proper arguments
-    libkeccak_digest_t digest;
-    if (libkeccak_digest_init(&digest, &state, 32) < 0) {
-        fprintf(stderr, "Digest init failed\n");
-        return;
-    }
-    
-    if (libkeccak_digest_update(&digest, NULL, 0) < 0) {
-        fprintf(stderr, "Digest update failed\n");
-        return;
-    }
-    
-    if (libkeccak_digest_sum(&digest, output) < 0) {
-        fprintf(stderr, "Digest sum failed\n");
-        return;
-    }
-    
-    if (print_intermediate) {
-        printf("\nFinal output generated");
-        print_state((uint64_t*)&state.S, "After Final Digest");
-    }
-    
-    libkeccak_state_fast_destroy(&state);
-}
-
-// Helper to print hex output
-void print_hex(const char *label, const uint8_t *data, size_t len) {
-    printf("%s: ", label);
+void print_hex(const unsigned char* data, size_t len) {
     for (size_t i = 0; i < len; i++) {
         printf("%02x", data[i]);
     }
     printf("\n");
 }
 
-int main() {
-    // Test case: "The quick brown fox jumps over the lazy dog"
-    const char *part1 = "The quick brown fox";
-    const char *part2 = " jumps over the lazy dog";
-    uint64_t intermediate_state[25];
-    uint8_t final_hash[32];
-    int print_steps = 1;
+int shake_hash(const char* input, size_t input_len, int shake_variant, size_t output_bytes) {
+    struct libkeccak_spec spec;
+    struct libkeccak_state state;
+    unsigned char* output;
     
-    // Step 1: Process first part and save state
-    {
-        libkeccak_state_t state;
-        libkeccak_spec_t spec = {1088, 512, 256};
-        if (libkeccak_state_initialise(&state, &spec) < 0) {
-            fprintf(stderr, "Initialization failed\n");
-            return 1;
-        }
-        
-        // Process first part
-        if (libkeccak_update(&state, (uint8_t*)part1, strlen(part1)) < 0) {
-            fprintf(stderr, "Update failed\n");
-            return 1;
-        }
-        
-        // Force to block boundary
-        libkeccak_digest_t digest;
-        if (libkeccak_digest_init(&digest, &state, 0) < 0 ||
-            libkeccak_digest_update(&digest, NULL, 0) < 0) {
-            fprintf(stderr, "Digest failed\n");
-            return 1;
-        }
-        
-        // Save state (25 uint64_t values)
-        memcpy(intermediate_state, &state.S, 25 * sizeof(uint64_t));
-        
-        if (print_steps) {
-            printf("Saved intermediate state after processing:\n\"%s\"", part1);
-            print_state(intermediate_state, "Intermediate State");
-        }
-        
-        libkeccak_state_fast_destroy(&state);
-    }
-    
-    // Step 2: Continue from intermediate state
-    sha3_256_from_intermediate(
-        final_hash,
-        intermediate_state,
-        (uint8_t*)part2,
-        strlen(part2),
-        print_steps
-    );
-    
-    print_hex("\nFinal SHA3-256 hash", final_hash, 32);
-    
-    // Verification: Compute full hash normally
-    uint8_t reference_hash[32];
-    {
-        libkeccak_state_t state;
-        libkeccak_spec_t spec = {1088, 512, 256};
-        libkeccak_state_initialise(&state, &spec);
-        
-        const char *full_msg = "The quick brown fox jumps over the lazy dog";
-        libkeccak_update(&state, (uint8_t*)full_msg, strlen(full_msg));
-        
-        uint8_t pad = 0x06;
-        libkeccak_update(&state, &pad, 1);
-        uint8_t final_bit = 0x80;
-        libkeccak_update(&state, &final_bit, 1);
-        
-        libkeccak_digest_t digest;
-        libkeccak_digest_init(&digest, &state, 32);
-        libkeccak_digest_update(&digest, NULL, 0);
-        libkeccak_digest_sum(&digest, reference_hash);
-        libkeccak_state_fast_destroy(&state);
-    }
-    
-    print_hex("Reference hash", reference_hash, 32);
-    
-    if (memcmp(final_hash, reference_hash, 32) == 0) {
-        printf("\nSUCCESS: Hashes match!\n");
+    // Set up SHAKE specification
+    if (shake_variant == 128) {
+        libkeccak_spec_shake(&spec, 128, output_bytes);
+    } else if (shake_variant == 256) {
+        libkeccak_spec_shake(&spec, 256, output_bytes);
     } else {
-        printf("\nERROR: Hashes differ!\n");
+        fprintf(stderr, "Error: Unsupported SHAKE variant. Use 128 or 256.\n");
+        return -1;
     }
     
+    // Initialize state
+    if (libkeccak_state_initialise(&state, &spec) < 0) {
+        fprintf(stderr, "Error: Failed to initialize SHAKE state\n");
+        return -1;
+    }
+    
+    // Allocate output buffer
+    output = malloc(output_bytes);
+    if (!output) {
+        fprintf(stderr, "Error: Memory allocation failed\n");
+        libkeccak_state_destroy(&state);
+        return -1;
+    }
+    
+    // Process input and generate hash
+    if (libkeccak_update(&state, input, input_len) < 0) {
+        fprintf(stderr, "Error: Failed to update SHAKE state\n");
+        free(output);
+        libkeccak_state_destroy(&state);
+        return -1;
+    }
+    
+    if (libkeccak_digest(&state, NULL, 0, 0, NULL, output) < 0) {
+        fprintf(stderr, "Error: Failed to generate SHAKE hash\n");
+        free(output);
+        libkeccak_state_destroy(&state);
+        return -1;
+    }
+    
+    printf("SHAKE%d (%zu bytes): ", shake_variant, output_bytes);
+    print_hex(output, output_bytes);
+    
+    free(output);
+    libkeccak_state_destroy(&state);
     return 0;
+}
+
+int cshake_hash(const char* input, size_t input_len, int cshake_variant, 
+                size_t output_bytes, const char* function_name, const char* customization) {
+    struct libkeccak_spec spec;
+    struct libkeccak_state state;
+    unsigned char* output;
+    
+    // Set up cSHAKE specification
+    if (cshake_variant == 128) {
+        libkeccak_spec_cshake(&spec, 128, output_bytes, function_name, customization);
+    } else if (cshake_variant == 256) {
+        libkeccak_spec_cshake(&spec, 256, output_bytes, function_name, customization);
+    } else {
+        fprintf(stderr, "Error: Unsupported cSHAKE variant. Use 128 or 256.\n");
+        return -1;
+    }
+    
+    // Initialize state
+    if (libkeccak_state_initialise(&state, &spec) < 0) {
+        fprintf(stderr, "Error: Failed to initialize cSHAKE state\n");
+        return -1;
+    }
+    
+    // Allocate output buffer
+    output = malloc(output_bytes);
+    if (!output) {
+        fprintf(stderr, "Error: Memory allocation failed\n");
+        libkeccak_state_destroy(&state);
+        return -1;
+    }
+    
+    // Process input and generate hash
+    if (libkeccak_update(&state, input, input_len) < 0) {
+        fprintf(stderr, "Error: Failed to update cSHAKE state\n");
+        free(output);
+        libkeccak_state_destroy(&state);
+        return -1;
+    }
+    
+    if (libkeccak_digest(&state, NULL, 0, 0, NULL, output) < 0) {
+        fprintf(stderr, "Error: Failed to generate cSHAKE hash\n");
+        free(output);
+        libkeccak_state_destroy(&state);
+        return -1;
+    }
+    
+    printf("cSHAKE%d (%zu bytes): ", cshake_variant, output_bytes);
+    print_hex(output, output_bytes);
+    
+    free(output);
+    libkeccak_state_destroy(&state);
+    return 0;
+}
+
+void print_usage(const char* program_name) {
+    printf("Usage: %s [OPTIONS] <input_string>\n", program_name);
+    printf("Options:\n");
+    printf("  --shake128 <bytes>     Generate SHAKE128 with specified output length\n");
+    printf("  --shake256 <bytes>     Generate SHAKE256 with specified output length\n");
+    printf("  --cshake128 <bytes> <function_name> <customization>\n");
+    printf("                         Generate cSHAKE128 with customization\n");
+    printf("  --cshake256 <bytes> <function_name> <customization>\n");
+    printf("                         Generate cSHAKE256 with customization\n");
+    printf("  --all <bytes>          Generate all variants with specified output length\n");
+    printf("\nExamples:\n");
+    printf("  %s --shake128 32 \"Hello World\"\n", program_name);
+    printf("  %s --cshake256 64 \"MyApp\" \"Email\" \"user@example.com\"\n", program_name);
+    printf("  %s --all 32 \"Test Data\"\n", program_name);
+}
+
+int main(int argc, char* argv[]) {
+    if (argc < 3) {
+        print_usage(argv[0]);
+        return 1;
+    }
+    
+    const char* mode = argv[1];
+    const char* input;
+    size_t output_bytes;
+    
+    if (strcmp(mode, "--shake128") == 0 && argc >= 4) {
+        output_bytes = (size_t)atoi(argv[2]);
+        input = argv[3];
+        return shake_hash(input, strlen(input), 128, output_bytes);
+        
+    } else if (strcmp(mode, "--shake256") == 0 && argc >= 4) {
+        output_bytes = (size_t)atoi(argv[2]);
+        input = argv[3];
+        return shake_hash(input, strlen(input), 256, output_bytes);
+        
+    } else if (strcmp(mode, "--cshake128") == 0 && argc >= 6) {
+        output_bytes = (size_t)atoi(argv[2]);
+        const char* function_name = argv[3];
+        const char* customization = argv[4];
+        input = argv[5];
+        return cshake_hash(input, strlen(input), 128, output_bytes, function_name, customization);
+        
+    } else if (strcmp(mode, "--cshake256") == 0 && argc >= 6) {
+        output_bytes = (size_t)atoi(argv[2]);
+        const char* function_name = argv[3];
+        const char* customization = argv[4];
+        input = argv[5];
+        return cshake_hash(input, strlen(input), 256, output_bytes, function_name, customization);
+        
+    } else if (strcmp(mode, "--all") == 0 && argc >= 4) {
+        output_bytes = (size_t)atoi(argv[2]);
+        input = argv[3];
+        
+        printf("Input: \"%s\"\n", input);
+        printf("Output length: %zu bytes\n\n", output_bytes);
+        
+        shake_hash(input, strlen(input), 128, output_bytes);
+        shake_hash(input, strlen(input), 256, output_bytes);
+        cshake_hash(input, strlen(input), 128, output_bytes, "TestApp", "Example");
+        cshake_hash(input, strlen(input), 256, output_bytes, "TestApp", "Example");
+        
+        return 0;
+    } else {
+        print_usage(argv[0]);
+        return 1;
+    }
 }
