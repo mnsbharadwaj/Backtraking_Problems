@@ -51,8 +51,8 @@ void sha3_256_from_intermediate(uint8_t *output,
         size_t chunk_size = (data_len - offset > block_size) 
                             ? block_size : data_len - offset;
         
-        if (libkeccak_fast_absorb(&state, data + offset, chunk_size) < 0) {
-            fprintf(stderr, "Absorption failed\n");
+        if (libkeccak_fast_update(&state, data + offset, chunk_size) < 0) {
+            fprintf(stderr, "Update failed\n");
             return;
         }
         offset += chunk_size;
@@ -63,7 +63,7 @@ void sha3_256_from_intermediate(uint8_t *output,
         }
         
         if (chunk_size == block_size) {
-            if (libkeccak_fast_digest(&state) < 0) {
+            if (libkeccak_fast_digest(&state, NULL, 0, NULL) < 0) {
                 fprintf(stderr, "Permutation failed\n");
                 return;
             }
@@ -74,30 +74,31 @@ void sha3_256_from_intermediate(uint8_t *output,
     
     // Apply SHA3 padding (0x06)
     uint8_t pad = 0x06;
-    if (libkeccak_fast_pad(&state, &pad, 1) < 0) {
+    if (libkeccak_fast_update(&state, &pad, 1) < 0) {
         fprintf(stderr, "Padding failed\n");
+        return;
+    }
+    
+    // Final bit
+    uint8_t final_bit = 0x80;
+    if (libkeccak_fast_update(&state, &final_bit, 1) < 0) {
+        fprintf(stderr, "Final bit failed\n");
         return;
     }
     
     if (print_intermediate) 
         print_state(&state, "After Padding");
     
-    // Final permutation
-    if (libkeccak_fast_digest(&state) < 0) {
-        fprintf(stderr, "Final permutation failed\n");
+    // Final permutation and squeeze
+    if (libkeccak_fast_digest(&state, output, 32, NULL) < 0) {
+        fprintf(stderr, "Final digest failed\n");
         return;
     }
     
-    // Squeeze output (32 bytes for SHA3-256)
-    libkeccak_fast_squeeze(&state, 32);
-    memcpy(output, state.M, 32);
-    
     if (print_intermediate) {
-        printf("\nSqueezed 32 bytes");
-        print_state(&state, "After Squeeze");
+        printf("\nFinal output generated");
+        print_state(&state, "After Final Digest");
     }
-    
-    libkeccak_state_fast_destroy(&state);
 }
 
 // Helper to print hex output
@@ -110,71 +111,78 @@ void print_hex(const char *label, const uint8_t *data, size_t len) {
 }
 
 int main() {
-    // Test 1: Full hash calculation
-    const char *full_msg = "The quick brown fox jumps over the lazy dog";
-    uint8_t full_hash[32];
-    
-    {
-        libkeccak_state_t state;
-        libkeccak_spec_t spec = {1088, 512, 256};
-        libkeccak_state_initialise(&state, &spec);
-        
-        // Process full message
-        libkeccak_fast_absorb(&state, (uint8_t*)full_msg, strlen(full_msg));
-        
-        // Apply padding and get hash
-        uint8_t pad = 0x06;
-        libkeccak_fast_pad(&state, &pad, 1);
-        libkeccak_fast_digest(&state);
-        libkeccak_fast_squeeze(&state, 32);
-        memcpy(full_hash, state.M, 32);
-        
-        libkeccak_state_fast_destroy(&state);
-    }
-    
-    print_hex("Full SHA3-256", full_hash, 32);
-    
-    // Test 2: Continue from intermediate state
+    // Test case: "The quick brown fox jumps over the lazy dog"
     const char *part1 = "The quick brown fox";
     const char *part2 = " jumps over the lazy dog";
-    uint8_t intermediate_state[200];  // 25 * 8 = 200 bytes
-    uint8_t continued_hash[32];
+    uint8_t intermediate_state[200];
+    uint8_t final_hash[32];
     int print_steps = 1;
     
-    // Get intermediate state after first part
+    // Step 1: Process first part and save state
     {
         libkeccak_state_t state;
         libkeccak_spec_t spec = {1088, 512, 256};
-        libkeccak_state_initialise(&state, &spec);
-        
-        // Process first part
-        libkeccak_fast_absorb(&state, (uint8_t*)part1, strlen(part1));
-        
-        // Force process to block boundary
-        if (libkeccak_fast_digest(&state) < 0) {
-            fprintf(stderr, "Intermediate permutation failed\n");
+        if (libkeccak_state_initialise(&state, &spec) < 0) {
+            fprintf(stderr, "Initialization failed\n");
             return 1;
         }
         
-        // Save intermediate state (200 bytes)
+        // Process first part
+        if (libkeccak_fast_update(&state, (uint8_t*)part1, strlen(part1)) < 0) {
+            fprintf(stderr, "Update failed\n");
+            return 1;
+        }
+        
+        // Force to block boundary
+        if (libkeccak_fast_digest(&state, NULL, 0, NULL) < 0) {
+            fprintf(stderr, "Digest failed\n");
+            return 1;
+        }
+        
+        // Save state (25 uint64_t = 200 bytes)
         memcpy(intermediate_state, state.S, 200);
+        
+        if (print_steps) {
+            printf("Saved intermediate state after processing:\n\"%s\"", part1);
+            print_state(&state, "Intermediate State");
+        }
         
         libkeccak_state_fast_destroy(&state);
     }
     
-    // Continue from intermediate state with second part
+    // Step 2: Continue from intermediate state
     sha3_256_from_intermediate(
-        continued_hash,
+        final_hash,
         intermediate_state,
         (uint8_t*)part2,
         strlen(part2),
         print_steps
     );
     
-    print_hex("\nContinued SHA3-256", continued_hash, 32);
+    print_hex("\nFinal SHA3-256 hash", final_hash, 32);
     
-    // Verify results match
-    if (memcmp(full_hash, continued_hash, 32) == 0) {
+    // Verification: Compute full hash normally
+    uint8_t reference_hash[32];
+    {
+        libkeccak_state_t state;
+        libkeccak_spec_t spec = {1088, 512, 256};
+        libkeccak_state_initialise(&state, &spec);
+        
+        const char *full_msg = "The quick brown fox jumps over the lazy dog";
+        libkeccak_fast_update(&state, (uint8_t*)full_msg, strlen(full_msg));
+        
+        uint8_t pad = 0x06;
+        libkeccak_fast_update(&state, &pad, 1);
+        uint8_t final_bit = 0x80;
+        libkeccak_fast_update(&state, &final_bit, 1);
+        
+        libkeccak_fast_digest(&state, reference_hash, 32, NULL);
+        libkeccak_state_fast_destroy(&state);
+    }
+    
+    print_hex("Reference hash", reference_hash, 32);
+    
+    if (memcmp(final_hash, reference_hash, 32) == 0) {
         printf("\nSUCCESS: Hashes match!\n");
     } else {
         printf("\nERROR: Hashes differ!\n");
