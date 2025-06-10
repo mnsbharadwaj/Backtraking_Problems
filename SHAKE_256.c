@@ -17,9 +17,9 @@ int shake_hash(const char* input, size_t input_len, int shake_variant, size_t ou
     
     // Set up SHAKE specification
     if (shake_variant == 128) {
-        libkeccak_spec_shake(&spec, 128, output_bytes);
+        libkeccak_spec_shake(&spec, 128, output_bytes * 8);  // bits, not bytes
     } else if (shake_variant == 256) {
-        libkeccak_spec_shake(&spec, 256, output_bytes);
+        libkeccak_spec_shake(&spec, 256, output_bytes * 8);  // bits, not bytes
     } else {
         fprintf(stderr, "Error: Unsupported SHAKE variant. Use 128 or 256.\n");
         return -1;
@@ -70,9 +70,9 @@ int cshake_hash(const char* input, size_t input_len, int cshake_variant,
     
     // Set up cSHAKE specification
     if (cshake_variant == 128) {
-        libkeccak_spec_cshake(&spec, 128, output_bytes, function_name, customization);
+        libkeccak_spec_cshake(&spec, 128, output_bytes * 8, function_name, customization);  // bits, not bytes
     } else if (cshake_variant == 256) {
-        libkeccak_spec_cshake(&spec, 256, output_bytes, function_name, customization);
+        libkeccak_spec_cshake(&spec, 256, output_bytes * 8, function_name, customization);  // bits, not bytes
     } else {
         fprintf(stderr, "Error: Unsupported cSHAKE variant. Use 128 or 256.\n");
         return -1;
