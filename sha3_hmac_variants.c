@@ -475,15 +475,106 @@ int hmac_streaming_example(const char* key, size_t key_len,
     return 0;
 }
 
+// Function to securely read key from user input
+char* read_key_input(const char* prompt) {
+    printf("%s", prompt);
+    fflush(stdout);
+    
+    char* key = malloc(1024);  // Max key length
+    if (!key) {
+        fprintf(stderr, "Error: Memory allocation failed\n");
+        return NULL;
+    }
+    
+    if (fgets(key, 1024, stdin) == NULL) {
+        fprintf(stderr, "Error: Failed to read key input\n");
+        free(key);
+        return NULL;
+    }
+    
+    // Remove newline if present
+    size_t len = strlen(key);
+    if (len > 0 && key[len-1] == '\n') {
+        key[len-1] = '\0';
+    }
+    
+    return key;
+}
+
+// Enhanced HMAC function with interactive key input
+int hmac_sha3_with_key_input(const char* message, size_t message_len, int variant) {
+    char* key = read_key_input("Enter HMAC key (or press Enter for empty key): ");
+    if (!key) {
+        return -1;
+    }
+    
+    size_t key_len = strlen(key);
+    printf("Using key: ");
+    if (key_len == 0) {
+        printf("<empty> (0 bytes)\n");
+    } else {
+        printf("\"%s\" (%zu bytes)\n", key, key_len);
+    }
+    
+    int result = hmac_sha3_oneshot(key, key_len, message, message_len, variant);
+    
+    // Clear key from memory for security
+    memset(key, 0, strlen(key));
+    free(key);
+    
+    return result;
+}
+
+int hmac_sha3_all_variants_with_key_input(const char* message, size_t message_len) {
+    char* key = read_key_input("Enter HMAC key (or press Enter for empty key): ");
+    if (!key) {
+        return -1;
+    }
+    
+    size_t key_len = strlen(key);
+    printf("Using key: ");
+    if (key_len == 0) {
+        printf("<empty> (0 bytes)\n");
+    } else {
+        printf("\"%s\" (%zu bytes)\n", key, key_len);
+    }
+    
+    int result = hmac_sha3_all_variants(key, key_len, message, message_len);
+    
+    // Clear key from memory for security
+    memset(key, 0, strlen(key));
+    free(key);
+    
+    return result;
+}
+
+// Enhanced streaming HMAC with key input
+int hmac_streaming_with_key_input(const char* data1, size_t len1, 
+                                 const char* data2, size_t len2, int variant) {
+    char* key = read_key_input("Enter HMAC key (or press Enter for empty key): ");
+    if (!key) {
+        return -1;
+    }
+    
+    size_t key_len = strlen(key);
+    int result = hmac_streaming_example(key, key_len, data1, len1, data2, len2, variant);
+    
+    // Clear key from memory for security
+    memset(key, 0, strlen(key));
+    free(key);
+    
+    return result;
+}
+
 // ================================
-// Utility Functions
+// Utility Functions (Enhanced for zero-length support)
 // ================================
 
 int sha3_all_variants(const char* input, size_t input_len) {
     if (input_len == 0) {
         printf("Input: <empty> (0 bytes)\n");
     } else {
-        printf("Input: \"%s\" (%zu bytes)\n", input, input_len);
+        printf("Input: \"%s\" (%zu bytes)\n", safe_str(input), input_len);
     }
     printf("Computing all SHA-3 variants...\n\n");
     
@@ -503,13 +594,13 @@ int hmac_sha3_all_variants(const char* key, size_t key_len, const char* message,
     if (key_len == 0) {
         printf("Key: <empty> (0 bytes)\n");
     } else {
-        printf("Key: \"%s\" (%zu bytes)\n", key, key_len);
+        printf("Key: \"%s\" (%zu bytes)\n", safe_str(key), key_len);
     }
     
     if (message_len == 0) {
         printf("Message: <empty> (0 bytes)\n");
     } else {
-        printf("Message: \"%s\" (%zu bytes)\n", message, message_len);
+        printf("Message: \"%s\" (%zu bytes)\n", safe_str(message), message_len);
     }
     printf("Computing all HMAC-SHA3 variants...\n\n");
     
@@ -523,6 +614,16 @@ int hmac_sha3_all_variants(const char* key, size_t key_len, const char* message,
     }
     
     return 0;
+}
+
+// Helper function to safely get string length, treating NULL as empty
+size_t safe_strlen(const char* str) {
+    return str ? strlen(str) : 0;
+}
+
+// Helper function to safely get string pointer, treating NULL as empty string  
+const char* safe_str(const char* str) {
+    return str ? str : "";
 }
 
 void print_usage(const char* program_name) {
@@ -544,16 +645,30 @@ void print_usage(const char* program_name) {
     printf("  --hmac-512 <key> <message>     Compute HMAC-SHA3-512\n");
     printf("  --hmac-all <key> <message>     Compute all HMAC-SHA3 variants\n\n");
     
+    printf("Interactive Key Input:\n");
+    printf("  --hmac-224-key <message>       Prompt for key, then compute HMAC-SHA3-224\n");
+    printf("  --hmac-256-key <message>       Prompt for key, then compute HMAC-SHA3-256\n");
+    printf("  --hmac-384-key <message>       Prompt for key, then compute HMAC-SHA3-384\n");
+    printf("  --hmac-512-key <message>       Prompt for key, then compute HMAC-SHA3-512\n");
+    printf("  --hmac-all-key <message>       Prompt for key, then compute all HMAC variants\n\n");
+    
     printf("Streaming Examples:\n");
     printf("  --stream-sha3 <variant> <data1> <data2>    Streaming SHA3 example\n");
-    printf("  --stream-hmac <variant> <key> <data1> <data2>  Streaming HMAC example\n\n");
+    printf("  --stream-hmac <variant> <key> <data1> <data2>  Streaming HMAC example\n");
+    printf("  --stream-hmac-key <variant> <data1> <data2>    Streaming HMAC with key input\n\n");
+    
+    printf("Zero-Length Data Support:\n");
+    printf("  Use \"\" for empty strings or omit arguments for interactive input\n");
+    printf("  All functions properly handle zero-length keys and messages\n\n");
     
     printf("Examples:\n");
-    printf("  %s --sha3-256 \"Hello World\"\n", program_name);
-    printf("  %s --all \"\"\n", program_name);
-    printf("  %s --hmac-256 \"secret\" \"message\"\n", program_name);
-    printf("  %s --stream-sha3 256 \"Hello\" \" World\"\n", program_name);
-    printf("  %s --stream-hmac 256 \"key\" \"part1\" \"part2\"\n", program_name);
+    printf("  %s --sha3-256 \"Hello World\"            # Basic SHA3\n", program_name);
+    printf("  %s --sha3-256 \"\"                       # SHA3 of empty string\n", program_name);
+    printf("  %s --hmac-256 \"secret\" \"message\"       # Basic HMAC\n", program_name);
+    printf("  %s --hmac-256 \"\" \"message\"             # HMAC with empty key\n", program_name);
+    printf("  %s --hmac-256 \"key\" \"\"                 # HMAC with empty message\n", program_name);
+    printf("  %s --hmac-256-key \"message\"             # Interactive key input\n", program_name);
+    printf("  %s --stream-hmac-key 256 \"part1\" \"part2\" # Streaming with key input\n", program_name);
 }
 
 int main(int argc, char* argv[]) {
@@ -571,46 +686,94 @@ int main(int argc, char* argv[]) {
     } else if (strcmp(mode, "--empty") == 0) {
         return sha3_all_variants("", 0);
         
-    } else if (strcmp(mode, "--sha3-224") == 0 && argc >= 3) {
-        return sha3_oneshot(argv[2], strlen(argv[2]), 224);
+    } else if (strcmp(mode, "--sha3-224") == 0) {
+        const char* input = (argc >= 3) ? argv[2] : "";
+        return sha3_oneshot(input, safe_strlen(input), 224);
         
-    } else if (strcmp(mode, "--sha3-256") == 0 && argc >= 3) {
-        return sha3_oneshot(argv[2], strlen(argv[2]), 256);
+    } else if (strcmp(mode, "--sha3-256") == 0) {
+        const char* input = (argc >= 3) ? argv[2] : "";
+        return sha3_oneshot(input, safe_strlen(input), 256);
         
-    } else if (strcmp(mode, "--sha3-384") == 0 && argc >= 3) {
-        return sha3_oneshot(argv[2], strlen(argv[2]), 384);
+    } else if (strcmp(mode, "--sha3-384") == 0) {
+        const char* input = (argc >= 3) ? argv[2] : "";
+        return sha3_oneshot(input, safe_strlen(input), 384);
         
-    } else if (strcmp(mode, "--sha3-512") == 0 && argc >= 3) {
-        return sha3_oneshot(argv[2], strlen(argv[2]), 512);
+    } else if (strcmp(mode, "--sha3-512") == 0) {
+        const char* input = (argc >= 3) ? argv[2] : "";
+        return sha3_oneshot(input, safe_strlen(input), 512);
         
-    } else if (strcmp(mode, "--all") == 0 && argc >= 3) {
-        return sha3_all_variants(argv[2], strlen(argv[2]));
+    } else if (strcmp(mode, "--all") == 0) {
+        const char* input = (argc >= 3) ? argv[2] : "";
+        return sha3_all_variants(input, safe_strlen(input));
         
-    } else if (strcmp(mode, "--hmac-224") == 0 && argc >= 4) {
-        return hmac_sha3_oneshot(argv[2], strlen(argv[2]), argv[3], strlen(argv[3]), 224);
+    } else if (strcmp(mode, "--hmac-224") == 0) {
+        const char* key = (argc >= 3) ? argv[2] : "";
+        const char* message = (argc >= 4) ? argv[3] : "";
+        return hmac_sha3_oneshot(key, safe_strlen(key), message, safe_strlen(message), 224);
         
-    } else if (strcmp(mode, "--hmac-256") == 0 && argc >= 4) {
-        return hmac_sha3_oneshot(argv[2], strlen(argv[2]), argv[3], strlen(argv[3]), 256);
+    } else if (strcmp(mode, "--hmac-256") == 0) {
+        const char* key = (argc >= 3) ? argv[2] : "";
+        const char* message = (argc >= 4) ? argv[3] : "";
+        return hmac_sha3_oneshot(key, safe_strlen(key), message, safe_strlen(message), 256);
         
-    } else if (strcmp(mode, "--hmac-384") == 0 && argc >= 4) {
-        return hmac_sha3_oneshot(argv[2], strlen(argv[2]), argv[3], strlen(argv[3]), 384);
+    } else if (strcmp(mode, "--hmac-384") == 0) {
+        const char* key = (argc >= 3) ? argv[2] : "";
+        const char* message = (argc >= 4) ? argv[3] : "";
+        return hmac_sha3_oneshot(key, safe_strlen(key), message, safe_strlen(message), 384);
         
-    } else if (strcmp(mode, "--hmac-512") == 0 && argc >= 4) {
-        return hmac_sha3_oneshot(argv[2], strlen(argv[2]), argv[3], strlen(argv[3]), 512);
+    } else if (strcmp(mode, "--hmac-512") == 0) {
+        const char* key = (argc >= 3) ? argv[2] : "";
+        const char* message = (argc >= 4) ? argv[3] : "";
+        return hmac_sha3_oneshot(key, safe_strlen(key), message, safe_strlen(message), 512);
         
-    } else if (strcmp(mode, "--hmac-all") == 0 && argc >= 4) {
-        return hmac_sha3_all_variants(argv[2], strlen(argv[2]), argv[3], strlen(argv[3]));
+    } else if (strcmp(mode, "--hmac-all") == 0) {
+        const char* key = (argc >= 3) ? argv[2] : "";
+        const char* message = (argc >= 4) ? argv[3] : "";
+        return hmac_sha3_all_variants(key, safe_strlen(key), message, safe_strlen(message));
         
+    // Interactive key input modes
+    } else if (strcmp(mode, "--hmac-224-key") == 0) {
+        const char* message = (argc >= 3) ? argv[2] : "";
+        return hmac_sha3_with_key_input(message, safe_strlen(message), 224);
+        
+    } else if (strcmp(mode, "--hmac-256-key") == 0) {
+        const char* message = (argc >= 3) ? argv[2] : "";
+        return hmac_sha3_with_key_input(message, safe_strlen(message), 256);
+        
+    } else if (strcmp(mode, "--hmac-384-key") == 0) {
+        const char* message = (argc >= 3) ? argv[2] : "";
+        return hmac_sha3_with_key_input(message, safe_strlen(message), 384);
+        
+    } else if (strcmp(mode, "--hmac-512-key") == 0) {
+        const char* message = (argc >= 3) ? argv[2] : "";
+        return hmac_sha3_with_key_input(message, safe_strlen(message), 512);
+        
+    } else if (strcmp(mode, "--hmac-all-key") == 0) {
+        const char* message = (argc >= 3) ? argv[2] : "";
+        return hmac_sha3_all_variants_with_key_input(message, safe_strlen(message));
+        
+    // Streaming modes
     } else if (strcmp(mode, "--stream-sha3") == 0 && argc >= 5) {
         int variant = atoi(argv[2]);
-        return sha3_streaming_example(argv[3], strlen(argv[3]), argv[4], strlen(argv[4]), variant);
+        const char* data1 = argv[3];
+        const char* data2 = argv[4];
+        return sha3_streaming_example(data1, safe_strlen(data1), data2, safe_strlen(data2), variant);
         
     } else if (strcmp(mode, "--stream-hmac") == 0 && argc >= 6) {
         int variant = atoi(argv[2]);
-        return hmac_streaming_example(argv[3], strlen(argv[3]), argv[4], strlen(argv[4]), argv[5], strlen(argv[5]), variant);
+        const char* key = argv[3];
+        const char* data1 = argv[4];
+        const char* data2 = argv[5];
+        return hmac_streaming_example(key, safe_strlen(key), data1, safe_strlen(data1), data2, safe_strlen(data2), variant);
+        
+    } else if (strcmp(mode, "--stream-hmac-key") == 0 && argc >= 5) {
+        int variant = atoi(argv[2]);
+        const char* data1 = argv[3];
+        const char* data2 = argv[4];
+        return hmac_streaming_with_key_input(data1, safe_strlen(data1), data2, safe_strlen(data2), variant);
         
     } else {
         printf("Computing all SHA-3 variants for input...\n\n");
-        return sha3_all_variants(argv[1], strlen(argv[1]));
+        return sha3_all_variants(argv[1], safe_strlen(argv[1]));
     }
 }
