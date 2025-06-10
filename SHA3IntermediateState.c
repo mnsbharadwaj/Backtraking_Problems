@@ -209,6 +209,7 @@ int sha3_step_by_step(const char* input, size_t input_len, int sha3_variant) {
 
 int sha3_oneshot_verify(const char* input, size_t input_len, int sha3_variant) {
     struct libkeccak_spec spec;
+    struct libkeccak_state state;
     unsigned char* output;
     size_t hash_size;
     
@@ -235,19 +236,35 @@ int sha3_oneshot_verify(const char* input, size_t input_len, int sha3_variant) {
             return -1;
     }
     
+    // Initialize state
+    if (libkeccak_state_initialise(&state, &spec) < 0) {
+        fprintf(stderr, "Error: Failed to initialize SHA-3 state\n");
+        return -1;
+    }
+    
     output = malloc(hash_size);
     if (!output) {
         fprintf(stderr, "Error: Memory allocation failed\n");
+        libkeccak_state_destroy(&state);
         return -1;
     }
     
     printf("=== ONESHOT VERIFICATION ===\n");
-    printf("Computing SHA-3-%d using libkeccak_digest() oneshot function...\n", sha3_variant);
+    printf("Computing SHA-3-%d using oneshot method...\n", sha3_variant);
     
-    // Use the oneshot digest function
-    if (libkeccak_digest(&spec, input, input_len, 0, NULL, output) < 0) {
+    // Update state with input
+    if (libkeccak_update(&state, input, input_len) < 0) {
+        fprintf(stderr, "Error: Failed to update state\n");
+        free(output);
+        libkeccak_state_destroy(&state);
+        return -1;
+    }
+    
+    // Generate digest
+    if (libkeccak_digest(&state, NULL, 0, 0, NULL, output) < 0) {
         fprintf(stderr, "Error: Oneshot digest failed\n");
         free(output);
+        libkeccak_state_destroy(&state);
         return -1;
     }
     
@@ -255,6 +272,7 @@ int sha3_oneshot_verify(const char* input, size_t input_len, int sha3_variant) {
     print_hex(output, hash_size, "Hash");
     
     free(output);
+    libkeccak_state_destroy(&state);
     return 0;
 }
 
@@ -330,11 +348,30 @@ int sha3_compare_methods(const char* input, size_t input_len, int sha3_variant) 
     
     // Method 2: Oneshot computation
     printf("\nMethod 2: Oneshot computation\n");
-    if (libkeccak_digest(&spec, input, input_len, 0, NULL, output_oneshot) < 0) {
+    struct libkeccak_state state_oneshot;
+    if (libkeccak_state_initialise(&state_oneshot, &spec) < 0) {
+        fprintf(stderr, "Error: Failed to initialize oneshot state\n");
+        free(output_stepwise);
+        free(output_oneshot);
+        libkeccak_state_destroy(&state);
+        return -1;
+    }
+    
+    if (libkeccak_update(&state_oneshot, input, input_len) < 0) {
+        fprintf(stderr, "Error: Failed to update oneshot state\n");
+        free(output_stepwise);
+        free(output_oneshot);
+        libkeccak_state_destroy(&state);
+        libkeccak_state_destroy(&state_oneshot);
+        return -1;
+    }
+    
+    if (libkeccak_digest(&state_oneshot, NULL, 0, 0, NULL, output_oneshot) < 0) {
         fprintf(stderr, "Error: Failed oneshot digest\n");
         free(output_stepwise);
         free(output_oneshot);
         libkeccak_state_destroy(&state);
+        libkeccak_state_destroy(&state_oneshot);
         return -1;
     }
     
@@ -362,6 +399,7 @@ int sha3_compare_methods(const char* input, size_t input_len, int sha3_variant) 
     free(output_stepwise);
     free(output_oneshot);
     libkeccak_state_destroy(&state);
+    libkeccak_state_destroy(&state_oneshot);
     return 0;
 }
 
