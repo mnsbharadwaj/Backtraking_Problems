@@ -68,11 +68,11 @@ int cshake_hash(const char* input, size_t input_len, int cshake_variant,
     struct libkeccak_state state;
     unsigned char* output;
     
-    // Set up cSHAKE specification
+    // Set up cSHAKE specification - first create basic SHAKE spec
     if (cshake_variant == 128) {
-        libkeccak_spec_cshake(&spec, 128, output_bytes * 8, function_name, customization);  // bits, not bytes
+        libkeccak_spec_shake(&spec, 128, output_bytes * 8);
     } else if (cshake_variant == 256) {
-        libkeccak_spec_cshake(&spec, 256, output_bytes * 8, function_name, customization);  // bits, not bytes
+        libkeccak_spec_shake(&spec, 256, output_bytes * 8);
     } else {
         fprintf(stderr, "Error: Unsupported cSHAKE variant. Use 128 or 256.\n");
         return -1;
@@ -90,6 +90,27 @@ int cshake_hash(const char* input, size_t input_len, int cshake_variant,
         fprintf(stderr, "Error: Memory allocation failed\n");
         libkeccak_state_destroy(&state);
         return -1;
+    }
+    
+    // Process customization parameters for cSHAKE
+    // First update with function name if provided
+    if (function_name && strlen(function_name) > 0) {
+        if (libkeccak_update(&state, function_name, strlen(function_name)) < 0) {
+            fprintf(stderr, "Error: Failed to update with function name\n");
+            free(output);
+            libkeccak_state_destroy(&state);
+            return -1;
+        }
+    }
+    
+    // Then update with customization string if provided  
+    if (customization && strlen(customization) > 0) {
+        if (libkeccak_update(&state, customization, strlen(customization)) < 0) {
+            fprintf(stderr, "Error: Failed to update with customization\n");
+            free(output);
+            libkeccak_state_destroy(&state);
+            return -1;
+        }
     }
     
     // Process input and generate hash
