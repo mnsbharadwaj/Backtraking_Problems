@@ -574,7 +574,7 @@ int sha3_all_variants(const char* input, size_t input_len) {
     if (input_len == 0) {
         printf("Input: <empty> (0 bytes)\n");
     } else {
-        printf("Input: \"%s\" (%zu bytes)\n", safe_str(input), input_len);
+        printf("Input: \"%s\" (%zu bytes)\n", input, input_len);
     }
     printf("Computing all SHA-3 variants...\n\n");
     
@@ -594,13 +594,13 @@ int hmac_sha3_all_variants(const char* key, size_t key_len, const char* message,
     if (key_len == 0) {
         printf("Key: <empty> (0 bytes)\n");
     } else {
-        printf("Key: \"%s\" (%zu bytes)\n", safe_str(key), key_len);
+        printf("Key: \"%s\" (%zu bytes)\n", key, key_len);
     }
     
     if (message_len == 0) {
         printf("Message: <empty> (0 bytes)\n");
     } else {
-        printf("Message: \"%s\" (%zu bytes)\n", safe_str(message), message_len);
+        printf("Message: \"%s\" (%zu bytes)\n", message, message_len);
     }
     printf("Computing all HMAC-SHA3 variants...\n\n");
     
