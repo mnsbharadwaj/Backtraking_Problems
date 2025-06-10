@@ -4,11 +4,11 @@
 #include <libkeccak.h>
 
 // Function to print Keccak state
-void print_state(const libkeccak_state_t *state, const char *label) {
+void print_state(const uint64_t state[25], const char *label) {
     printf("\n%s (State):\n", label);
     for (int i = 0; i < 5; i++) {
         for (int j = 0; j < 5; j++) {
-            printf("%016lx ", state->S[i*5 + j]);
+            printf("%016lx ", state[i*5 + j]);
         }
         printf("\n");
     }
@@ -16,7 +16,7 @@ void print_state(const libkeccak_state_t *state, const char *label) {
 
 // Compute SHA3-256 hash from intermediate state
 void sha3_256_from_intermediate(uint8_t *output, 
-                                const uint8_t *intermediate_state,
+                                const uint64_t intermediate_state[25],
                                 const uint8_t *data, 
                                 size_t data_len,
                                 int print_intermediate) {
@@ -34,14 +34,14 @@ void sha3_256_from_intermediate(uint8_t *output,
         return;
     }
     
-    // Copy intermediate state (200 bytes = 25 * 8 bytes)
-    memcpy(state.S, intermediate_state, 25 * sizeof(uint64_t));
+    // Copy intermediate state (25 uint64_t values)
+    memcpy(&state.S, intermediate_state, 25 * sizeof(uint64_t));
     
     // Reset buffer position (assumes we're at block boundary)
     state.m = 0;
     
     if (print_intermediate) 
-        print_state(&state, "Restored State");
+        print_state((uint64_t*)&state.S, "Restored State");
     
     // Process additional data
     size_t block_size = spec.bitrate / 8;
@@ -51,7 +51,8 @@ void sha3_256_from_intermediate(uint8_t *output,
         size_t chunk_size = (data_len - offset > block_size) 
                             ? block_size : data_len - offset;
         
-        if (libkeccak_fast_update(&state, data + offset, chunk_size) < 0) {
+        // Process chunk
+        if (libkeccak_update(&state, data + offset, chunk_size) < 0) {
             fprintf(stderr, "Update failed\n");
             return;
         }
@@ -59,46 +60,50 @@ void sha3_256_from_intermediate(uint8_t *output,
         
         if (print_intermediate) {
             printf("\nAbsorbed %zu bytes", chunk_size);
-            print_state(&state, "After Absorption");
-        }
-        
-        if (chunk_size == block_size) {
-            if (libkeccak_fast_digest(&state, NULL, 0, NULL) < 0) {
-                fprintf(stderr, "Permutation failed\n");
-                return;
-            }
-            if (print_intermediate) 
-                print_state(&state, "After Permutation");
+            print_state((uint64_t*)&state.S, "After Absorption");
         }
     }
     
     // Apply SHA3 padding (0x06)
     uint8_t pad = 0x06;
-    if (libkeccak_fast_update(&state, &pad, 1) < 0) {
+    if (libkeccak_update(&state, &pad, 1) < 0) {
         fprintf(stderr, "Padding failed\n");
         return;
     }
     
-    // Final bit
+    // Final bit (0x80)
     uint8_t final_bit = 0x80;
-    if (libkeccak_fast_update(&state, &final_bit, 1) < 0) {
+    if (libkeccak_update(&state, &final_bit, 1) < 0) {
         fprintf(stderr, "Final bit failed\n");
         return;
     }
     
     if (print_intermediate) 
-        print_state(&state, "After Padding");
+        print_state((uint64_t*)&state.S, "After Padding");
     
-    // Final permutation and squeeze
-    if (libkeccak_fast_digest(&state, output, 32, NULL) < 0) {
-        fprintf(stderr, "Final digest failed\n");
+    // Final digest with proper arguments
+    libkeccak_digest_t digest;
+    if (libkeccak_digest_init(&digest, &state, 32) < 0) {
+        fprintf(stderr, "Digest init failed\n");
+        return;
+    }
+    
+    if (libkeccak_digest_update(&digest, NULL, 0) < 0) {
+        fprintf(stderr, "Digest update failed\n");
+        return;
+    }
+    
+    if (libkeccak_digest_sum(&digest, output) < 0) {
+        fprintf(stderr, "Digest sum failed\n");
         return;
     }
     
     if (print_intermediate) {
         printf("\nFinal output generated");
-        print_state(&state, "After Final Digest");
+        print_state((uint64_t*)&state.S, "After Final Digest");
     }
+    
+    libkeccak_state_fast_destroy(&state);
 }
 
 // Helper to print hex output
@@ -114,7 +119,7 @@ int main() {
     // Test case: "The quick brown fox jumps over the lazy dog"
     const char *part1 = "The quick brown fox";
     const char *part2 = " jumps over the lazy dog";
-    uint8_t intermediate_state[200];
+    uint64_t intermediate_state[25];
     uint8_t final_hash[32];
     int print_steps = 1;
     
@@ -128,23 +133,25 @@ int main() {
         }
         
         // Process first part
-        if (libkeccak_fast_update(&state, (uint8_t*)part1, strlen(part1)) < 0) {
+        if (libkeccak_update(&state, (uint8_t*)part1, strlen(part1)) < 0) {
             fprintf(stderr, "Update failed\n");
             return 1;
         }
         
         // Force to block boundary
-        if (libkeccak_fast_digest(&state, NULL, 0, NULL) < 0) {
+        libkeccak_digest_t digest;
+        if (libkeccak_digest_init(&digest, &state, 0) < 0 ||
+            libkeccak_digest_update(&digest, NULL, 0) < 0) {
             fprintf(stderr, "Digest failed\n");
             return 1;
         }
         
-        // Save state (25 uint64_t = 200 bytes)
-        memcpy(intermediate_state, state.S, 200);
+        // Save state (25 uint64_t values)
+        memcpy(intermediate_state, &state.S, 25 * sizeof(uint64_t));
         
         if (print_steps) {
             printf("Saved intermediate state after processing:\n\"%s\"", part1);
-            print_state(&state, "Intermediate State");
+            print_state(intermediate_state, "Intermediate State");
         }
         
         libkeccak_state_fast_destroy(&state);
@@ -169,14 +176,17 @@ int main() {
         libkeccak_state_initialise(&state, &spec);
         
         const char *full_msg = "The quick brown fox jumps over the lazy dog";
-        libkeccak_fast_update(&state, (uint8_t*)full_msg, strlen(full_msg));
+        libkeccak_update(&state, (uint8_t*)full_msg, strlen(full_msg));
         
         uint8_t pad = 0x06;
-        libkeccak_fast_update(&state, &pad, 1);
+        libkeccak_update(&state, &pad, 1);
         uint8_t final_bit = 0x80;
-        libkeccak_fast_update(&state, &final_bit, 1);
+        libkeccak_update(&state, &final_bit, 1);
         
-        libkeccak_fast_digest(&state, reference_hash, 32, NULL);
+        libkeccak_digest_t digest;
+        libkeccak_digest_init(&digest, &state, 32);
+        libkeccak_digest_update(&digest, NULL, 0);
+        libkeccak_digest_sum(&digest, reference_hash);
         libkeccak_state_fast_destroy(&state);
     }
     
