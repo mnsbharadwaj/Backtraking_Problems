@@ -688,92 +688,92 @@ int main(int argc, char* argv[]) {
         
     } else if (strcmp(mode, "--sha3-224") == 0) {
         const char* input = (argc >= 3) ? argv[2] : "";
-        return sha3_oneshot(input, safe_strlen(input), 224);
+        return sha3_oneshot(input, strlen(input), 224);
         
     } else if (strcmp(mode, "--sha3-256") == 0) {
         const char* input = (argc >= 3) ? argv[2] : "";
-        return sha3_oneshot(input, safe_strlen(input), 256);
+        return sha3_oneshot(input, strlen(input), 256);
         
     } else if (strcmp(mode, "--sha3-384") == 0) {
         const char* input = (argc >= 3) ? argv[2] : "";
-        return sha3_oneshot(input, safe_strlen(input), 384);
+        return sha3_oneshot(input, strlen(input), 384);
         
     } else if (strcmp(mode, "--sha3-512") == 0) {
         const char* input = (argc >= 3) ? argv[2] : "";
-        return sha3_oneshot(input, safe_strlen(input), 512);
+        return sha3_oneshot(input, strlen(input), 512);
         
     } else if (strcmp(mode, "--all") == 0) {
         const char* input = (argc >= 3) ? argv[2] : "";
-        return sha3_all_variants(input, safe_strlen(input));
+        return sha3_all_variants(input, strlen(input));
         
     } else if (strcmp(mode, "--hmac-224") == 0) {
         const char* key = (argc >= 3) ? argv[2] : "";
         const char* message = (argc >= 4) ? argv[3] : "";
-        return hmac_sha3_oneshot(key, safe_strlen(key), message, safe_strlen(message), 224);
+        return hmac_sha3_oneshot(key, strlen(key), message, strlen(message), 224);
         
     } else if (strcmp(mode, "--hmac-256") == 0) {
         const char* key = (argc >= 3) ? argv[2] : "";
         const char* message = (argc >= 4) ? argv[3] : "";
-        return hmac_sha3_oneshot(key, safe_strlen(key), message, safe_strlen(message), 256);
+        return hmac_sha3_oneshot(key, strlen(key), message, strlen(message), 256);
         
     } else if (strcmp(mode, "--hmac-384") == 0) {
         const char* key = (argc >= 3) ? argv[2] : "";
         const char* message = (argc >= 4) ? argv[3] : "";
-        return hmac_sha3_oneshot(key, safe_strlen(key), message, safe_strlen(message), 384);
+        return hmac_sha3_oneshot(key, strlen(key), message, strlen(message), 384);
         
     } else if (strcmp(mode, "--hmac-512") == 0) {
         const char* key = (argc >= 3) ? argv[2] : "";
         const char* message = (argc >= 4) ? argv[3] : "";
-        return hmac_sha3_oneshot(key, safe_strlen(key), message, safe_strlen(message), 512);
+        return hmac_sha3_oneshot(key, strlen(key), message, strlen(message), 512);
         
     } else if (strcmp(mode, "--hmac-all") == 0) {
         const char* key = (argc >= 3) ? argv[2] : "";
         const char* message = (argc >= 4) ? argv[3] : "";
-        return hmac_sha3_all_variants(key, safe_strlen(key), message, safe_strlen(message));
+        return hmac_sha3_all_variants(key, strlen(key), message, strlen(message));
         
     // Interactive key input modes
     } else if (strcmp(mode, "--hmac-224-key") == 0) {
         const char* message = (argc >= 3) ? argv[2] : "";
-        return hmac_sha3_with_key_input(message, safe_strlen(message), 224);
+        return hmac_sha3_with_key_input(message, strlen(message), 224);
         
     } else if (strcmp(mode, "--hmac-256-key") == 0) {
         const char* message = (argc >= 3) ? argv[2] : "";
-        return hmac_sha3_with_key_input(message, safe_strlen(message), 256);
+        return hmac_sha3_with_key_input(message, strlen(message), 256);
         
     } else if (strcmp(mode, "--hmac-384-key") == 0) {
         const char* message = (argc >= 3) ? argv[2] : "";
-        return hmac_sha3_with_key_input(message, safe_strlen(message), 384);
+        return hmac_sha3_with_key_input(message, strlen(message), 384);
         
     } else if (strcmp(mode, "--hmac-512-key") == 0) {
         const char* message = (argc >= 3) ? argv[2] : "";
-        return hmac_sha3_with_key_input(message, safe_strlen(message), 512);
+        return hmac_sha3_with_key_input(message, strlen(message), 512);
         
     } else if (strcmp(mode, "--hmac-all-key") == 0) {
         const char* message = (argc >= 3) ? argv[2] : "";
-        return hmac_sha3_all_variants_with_key_input(message, safe_strlen(message));
+        return hmac_sha3_all_variants_with_key_input(message, strlen(message));
         
     // Streaming modes
     } else if (strcmp(mode, "--stream-sha3") == 0 && argc >= 5) {
         int variant = atoi(argv[2]);
         const char* data1 = argv[3];
         const char* data2 = argv[4];
-        return sha3_streaming_example(data1, safe_strlen(data1), data2, safe_strlen(data2), variant);
+        return sha3_streaming_example(data1, strlen(data1), data2, strlen(data2), variant);
         
     } else if (strcmp(mode, "--stream-hmac") == 0 && argc >= 6) {
         int variant = atoi(argv[2]);
         const char* key = argv[3];
         const char* data1 = argv[4];
         const char* data2 = argv[5];
-        return hmac_streaming_example(key, safe_strlen(key), data1, safe_strlen(data1), data2, safe_strlen(data2), variant);
+        return hmac_streaming_example(key, strlen(key), data1, strlen(data1), data2, strlen(data2), variant);
         
     } else if (strcmp(mode, "--stream-hmac-key") == 0 && argc >= 5) {
         int variant = atoi(argv[2]);
         const char* data1 = argv[3];
         const char* data2 = argv[4];
-        return hmac_streaming_with_key_input(data1, safe_strlen(data1), data2, safe_strlen(data2), variant);
+        return hmac_streaming_with_key_input(data1, strlen(data1), data2, strlen(data2), variant);
         
     } else {
         printf("Computing all SHA-3 variants for input...\n\n");
-        return sha3_all_variants(argv[1], safe_strlen(argv[1]));
+        return sha3_all_variants(argv[1], strlen(argv[1]));
     }
 }
