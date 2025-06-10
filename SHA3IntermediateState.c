@@ -73,8 +73,8 @@ int sha3_with_intermediate(const char* input, size_t input_len, int sha3_variant
     
     // Show initial state (should be all zeros)
     printf("Initial State (200 bytes):\n");
-    print_hex((unsigned char*)state.S, 200, "State");
-    print_state_lanes((uint64_t*)state.S);
+    print_hex((unsigned char*)&state.S, 200, "State");
+    print_state_lanes((uint64_t*)&state.S);
     
     // Process input
     if (libkeccak_update(&state, input, input_len) < 0) {
@@ -86,8 +86,8 @@ int sha3_with_intermediate(const char* input, size_t input_len, int sha3_variant
     
     // Show state after absorbing input
     printf("State after absorbing input (200 bytes):\n");
-    print_hex((unsigned char*)state.S, 200, "State");
-    print_state_lanes((uint64_t*)state.S);
+    print_hex((unsigned char*)&state.S, 200, "State");
+    print_state_lanes((uint64_t*)&state.S);
     
     // Generate final hash
     if (libkeccak_digest(&state, NULL, 0, 0, NULL, output) < 0) {
@@ -99,8 +99,8 @@ int sha3_with_intermediate(const char* input, size_t input_len, int sha3_variant
     
     // Show final state after padding and final rounds
     printf("Final State after padding and finalization (200 bytes):\n");
-    print_hex((unsigned char*)state.S, 200, "State");
-    print_state_lanes((uint64_t*)state.S);
+    print_hex((unsigned char*)&state.S, 200, "State");
+    print_state_lanes((uint64_t*)&state.S);
     
     // Show final hash
     printf("Final SHA-3-%d Hash (%zu bytes):\n", sha3_variant, hash_size);
@@ -181,7 +181,7 @@ int sha3_step_by_step(const char* input, size_t input_len, int sha3_variant) {
         }
         
         printf("State after block %zu:\n", block_num);
-        print_hex((unsigned char*)state.S, 200, "200-byte state");
+        print_hex((unsigned char*)&state.S, 200, "200-byte state");
         
         processed += chunk_size;
         block_num++;
@@ -198,7 +198,7 @@ int sha3_step_by_step(const char* input, size_t input_len, int sha3_variant) {
     
     printf("=== FINAL RESULTS ===\n");
     printf("Final 200-byte state:\n");
-    print_hex((unsigned char*)state.S, 200, "State");
+    print_hex((unsigned char*)&state.S, 200, "State");
     printf("\nFinal SHA-3-%d hash:\n", sha3_variant);
     print_hex(output, hash_size, "Hash");
     
