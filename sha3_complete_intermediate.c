@@ -49,7 +49,7 @@ typedef enum {
 
 // Context structure for all variants
 typedef struct {
-    libkeccak_state_t state;
+    struct libkeccak_state state;
     sha3_variant_t variant;
     size_t output_len;  // For SHAKE variants
     uint8_t *customization; // For cSHAKE
@@ -65,9 +65,10 @@ typedef struct {
     size_t capacity;          // Capacity in bits
     size_t output_len;        // Output length
     sha3_variant_t variant;   // Hash variant
-    size_t absorbed;          // Bytes absorbed so far
-    size_t mptr;              // Message pointer (current position in block)
-    size_t mlen;              // Message length remaining
+    int64_t w[25];           // The state array copy
+    long r;                  // Rate parameter
+    long c;                  // Capacity parameter
+    long n;                  // Output size
 } sha3_intermediate_state_t;
 
 // HMAC context
@@ -201,7 +202,7 @@ static void encode_string(uint8_t *output, size_t *out_len,
 
 // Initialize SHA-3 context
 int sha3_init(sha3_ctx_t *ctx, sha3_variant_t variant, size_t output_len) {
-    libkeccak_spec_t spec;
+    struct libkeccak_spec spec;
     
     memset(ctx, 0, sizeof(sha3_ctx_t));
     ctx->variant = variant;
@@ -224,11 +225,11 @@ int sha3_init(sha3_ctx_t *ctx, sha3_variant_t variant, size_t output_len) {
             ctx->output_len = SHA3_512_DIGEST_SIZE;
             break;
         case SHAKE128:
-            libkeccak_spec_shake(&spec, SHAKE128_CAPACITY / 2);
+            libkeccak_spec_shake(&spec, 128, output_len * 8);
             ctx->output_len = output_len;
             break;
         case SHAKE256:
-            libkeccak_spec_shake(&spec, SHAKE256_CAPACITY / 2);
+            libkeccak_spec_shake(&spec, 256, output_len * 8);
             ctx->output_len = output_len;
             break;
         case CSHAKE128:
@@ -247,7 +248,7 @@ int sha3_init(sha3_ctx_t *ctx, sha3_variant_t variant, size_t output_len) {
 int cshake_init(sha3_ctx_t *ctx, sha3_variant_t variant, size_t output_len,
                 const uint8_t *function_name, size_t fn_len,
                 const uint8_t *customization, size_t cust_len) {
-    libkeccak_spec_t spec;
+    struct libkeccak_spec spec;
     uint8_t encoded[512];
     size_t encoded_len = 0;
     
@@ -257,9 +258,9 @@ int cshake_init(sha3_ctx_t *ctx, sha3_variant_t variant, size_t output_len,
     
     // Set up spec
     if (variant == CSHAKE128) {
-        libkeccak_spec_shake(&spec, SHAKE128_CAPACITY / 2);
+        libkeccak_spec_shake(&spec, 128, output_len * 8);
     } else if (variant == CSHAKE256) {
-        libkeccak_spec_shake(&spec, SHAKE256_CAPACITY / 2);
+        libkeccak_spec_shake(&spec, 256, output_len * 8);
     } else {
         return -1;
     }
@@ -297,26 +298,27 @@ int cshake_init(sha3_ctx_t *ctx, sha3_variant_t variant, size_t output_len,
     }
     
     // Update state with encoded data
-    return libkeccak_fast_update(&ctx->state, (const char *)encoded, encoded_len);
+    return libkeccak_update(&ctx->state, (const char *)encoded, encoded_len);
 }
 
 // Update SHA-3 hash
 int sha3_update(sha3_ctx_t *ctx, const uint8_t *data, size_t len) {
-    return libkeccak_fast_update(&ctx->state, (const char *)data, len);
+    return libkeccak_update(&ctx->state, (const char *)data, len);
 }
 
 // Finalize SHA-3 hash
 int sha3_final(sha3_ctx_t *ctx, uint8_t *output) {
     // For SHA-3, use standard digest
     if (ctx->variant >= SHA3_224 && ctx->variant <= SHA3_512) {
-        return libkeccak_fast_digest(&ctx->state, NULL, 0, 0, NULL, (char *)output);
+        return libkeccak_digest(&ctx->state, NULL, 0, 0, NULL, (char *)output);
     }
     
-    // For SHAKE and cSHAKE, use rawshake
+    // For SHAKE and cSHAKE, finalize and squeeze
     if (ctx->variant >= SHAKE128 && ctx->variant <= CSHAKE256) {
-        libkeccak_fast_digest(&ctx->state, NULL, 0, 0, NULL, NULL);
-        libkeccak_fast_squeeze(&ctx->state, ctx->output_len);
-        memcpy(output, ctx->state.S, ctx->output_len);
+        if (libkeccak_digest(&ctx->state, NULL, 0, 0, NULL, NULL) < 0) {
+            return -1;
+        }
+        libkeccak_squeeze(&ctx->state, (char *)output);
         return 0;
     }
     
@@ -447,17 +449,20 @@ int sha3_save_state(sha3_ctx_t *ctx, sha3_intermediate_state_t *state) {
         return -1;
     }
     
-    // Copy the Keccak state
+    // Copy the Keccak state (S array)
     memcpy(state->state_data, ctx->state.S, KECCAK_STATE_SIZE);
+    
+    // Copy the state word array
+    memcpy(state->w, ctx->state.w, sizeof(state->w));
     
     // Save parameters
     state->rate = ctx->state.r;
     state->capacity = ctx->state.c;
     state->output_len = ctx->output_len;
     state->variant = ctx->variant;
-    state->absorbed = ctx->state.absorbed;
-    state->mptr = ctx->state.mptr;
-    state->mlen = ctx->state.mlen;
+    state->r = ctx->state.r;
+    state->c = ctx->state.c;
+    state->n = ctx->state.n;
     
     return 0;
 }
@@ -477,11 +482,12 @@ int sha3_restore_state(sha3_ctx_t *ctx, const sha3_intermediate_state_t *state) 
     
     // Restore the Keccak state
     memcpy(ctx->state.S, state->state_data, KECCAK_STATE_SIZE);
+    memcpy(ctx->state.w, state->w, sizeof(state->w));
     
     // Restore parameters
-    ctx->state.absorbed = state->absorbed;
-    ctx->state.mptr = state->mptr;
-    ctx->state.mlen = state->mlen;
+    ctx->state.r = state->r;
+    ctx->state.c = state->c;
+    ctx->state.n = state->n;
     ctx->output_len = state->output_len;
     
     return 0;
