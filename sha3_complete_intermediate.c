@@ -66,7 +66,8 @@ typedef struct {
     size_t output_len;        // Output length
     sha3_variant_t variant;   // Hash variant
     size_t absorbed;          // Bytes absorbed so far
-    size_t offset;            // Current offset in state
+    size_t mptr;              // Message pointer (current position in block)
+    size_t mlen;              // Message length remaining
 } sha3_intermediate_state_t;
 
 // HMAC context
@@ -296,28 +297,30 @@ int cshake_init(sha3_ctx_t *ctx, sha3_variant_t variant, size_t output_len,
     }
     
     // Update state with encoded data
-    return libkeccak_update(&ctx->state, encoded, encoded_len);
+    return libkeccak_fast_update(&ctx->state, (const char *)encoded, encoded_len);
 }
 
 // Update SHA-3 hash
 int sha3_update(sha3_ctx_t *ctx, const uint8_t *data, size_t len) {
-    return libkeccak_update(&ctx->state, (const char *)data, len);
+    return libkeccak_fast_update(&ctx->state, (const char *)data, len);
 }
 
 // Finalize SHA-3 hash
 int sha3_final(sha3_ctx_t *ctx, uint8_t *output) {
     // For SHA-3, use standard digest
     if (ctx->variant >= SHA3_224 && ctx->variant <= SHA3_512) {
-        return libkeccak_digest(&ctx->state, NULL, 0, 0, NULL, (char *)output);
+        return libkeccak_fast_digest(&ctx->state, NULL, 0, 0, NULL, (char *)output);
     }
     
-    // For SHAKE and cSHAKE, use squeeze
-    if (libkeccak_digest(&ctx->state, NULL, 0, 0, NULL, NULL) < 0) {
-        return -1;
+    // For SHAKE and cSHAKE, use rawshake
+    if (ctx->variant >= SHAKE128 && ctx->variant <= CSHAKE256) {
+        libkeccak_fast_digest(&ctx->state, NULL, 0, 0, NULL, NULL);
+        libkeccak_fast_squeeze(&ctx->state, ctx->output_len);
+        memcpy(output, ctx->state.S, ctx->output_len);
+        return 0;
     }
     
-    libkeccak_squeeze(&ctx->state, (char *)output, ctx->output_len);
-    return 0;
+    return -1;
 }
 
 // Initialize HMAC-SHA3
@@ -453,7 +456,8 @@ int sha3_save_state(sha3_ctx_t *ctx, sha3_intermediate_state_t *state) {
     state->output_len = ctx->output_len;
     state->variant = ctx->variant;
     state->absorbed = ctx->state.absorbed;
-    state->offset = ctx->state.offset;
+    state->mptr = ctx->state.mptr;
+    state->mlen = ctx->state.mlen;
     
     return 0;
 }
@@ -476,7 +480,8 @@ int sha3_restore_state(sha3_ctx_t *ctx, const sha3_intermediate_state_t *state) 
     
     // Restore parameters
     ctx->state.absorbed = state->absorbed;
-    ctx->state.offset = state->offset;
+    ctx->state.mptr = state->mptr;
+    ctx->state.mlen = state->mlen;
     ctx->output_len = state->output_len;
     
     return 0;
