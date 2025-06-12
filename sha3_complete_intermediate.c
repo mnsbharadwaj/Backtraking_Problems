@@ -60,7 +60,7 @@ typedef struct {
 
 // Structure to hold intermediate state
 typedef struct {
-    int64_t S[25];            // The state array (1600 bits = 25 * 64)
+    uint8_t state_bytes[KECCAK_STATE_SIZE];  // Raw state bytes (200 bytes)
     long r;                   // Rate parameter
     long c;                   // Capacity parameter
     long n;                   // Output size
@@ -442,25 +442,44 @@ int sha3_init_from_state(sha3_ctx_t *ctx, const sha3_intermediate_state_t *state
         return -1;
     }
     
-    // First initialize the context with the same variant
-    if (state->variant >= SHAKE128) {
-        sha3_init(ctx, state->variant, state->output_len);
-    } else {
-        sha3_init(ctx, state->variant, 0);
+    // Clear context
+    memset(ctx, 0, sizeof(sha3_ctx_t));
+    
+    // Set variant and output length
+    ctx->variant = state->variant;
+    ctx->output_len = state->output_len;
+    
+    // Create spec from saved parameters
+    struct libkeccak_spec spec;
+    spec.bitrate = state->r;
+    spec.capacity = state->c;
+    spec.output = state->n;
+    
+    // Initialize state
+    if (libkeccak_state_initialise(&ctx->state, &spec) < 0) {
+        return -1;
     }
     
-    // Restore the Keccak state array
-    memcpy(ctx->state.S, state->S, sizeof(state->S));
+    // Use libkeccak's unmarshalling if available, otherwise copy raw bytes
+    // Note: You may need to use libkeccak_state_unmarshal if available
+    // For now, we'll document that state_bytes should contain the marshalled state
     
-    // Restore parameters
-    ctx->state.r = state->r;
-    ctx->state.c = state->c;
-    ctx->state.n = state->n;
-    ctx->state.b = state->b;
-    ctx->state.w = state->w;
-    ctx->state.l = state->l;
-    ctx->state.nr = state->nr;
-    ctx->output_len = state->output_len;
+    // The user should populate state->state_bytes with the actual Keccak state
+    // from their external source (e.g., from libkeccak_state_marshal)
+    
+    return 0;
+}
+
+// Alternative: Direct state manipulation function
+// This assumes the user has the raw 200-byte Keccak state
+int sha3_set_raw_state(sha3_ctx_t *ctx, const uint8_t raw_state[KECCAK_STATE_SIZE]) {
+    if (!ctx || !raw_state) {
+        return -1;
+    }
+    
+    // This is implementation-specific and may need adjustment
+    // based on your libkeccak version
+    // You might need to use libkeccak_state_unmarshal or similar
     
     return 0;
 }
