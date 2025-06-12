@@ -60,15 +60,16 @@ typedef struct {
 
 // Structure to hold intermediate state
 typedef struct {
-    uint8_t state_data[KECCAK_STATE_SIZE];  // Keccak state
-    size_t rate;              // Rate in bits
-    size_t capacity;          // Capacity in bits
-    size_t output_len;        // Output length
+    int64_t S[25];            // The state array (1600 bits = 25 * 64)
+    long r;                   // Rate parameter
+    long c;                   // Capacity parameter
+    long n;                   // Output size
+    long b;                   // State size
+    long w;                   // Word size
+    long l;                   // L parameter
+    long nr;                  // Number of rounds
+    size_t output_len;        // Output length for our use
     sha3_variant_t variant;   // Hash variant
-    int64_t w[25];           // The state array copy
-    long r;                  // Rate parameter
-    long c;                  // Capacity parameter
-    long n;                  // Output size
 } sha3_intermediate_state_t;
 
 // HMAC context
@@ -85,7 +86,7 @@ typedef struct {
     sha3_intermediate_state_t outer_state;  // Outer hash state
     uint8_t key_pad[HMAC_MAX_KEY_SIZE];     // Padded key
     size_t block_size;                      // Block size for this variant
-    sha3_variant_t variant;                 // Hash variant
+    sha3_variant_t variant;                 // Hash variant (base SHA3 variant, not HMAC)
 } hmac_sha3_intermediate_state_t;
 
 // Basic SHA-3 functions
@@ -315,9 +316,11 @@ int sha3_final(sha3_ctx_t *ctx, uint8_t *output) {
     
     // For SHAKE and cSHAKE, finalize and squeeze
     if (ctx->variant >= SHAKE128 && ctx->variant <= CSHAKE256) {
+        // Finalize the state
         if (libkeccak_digest(&ctx->state, NULL, 0, 0, NULL, NULL) < 0) {
             return -1;
         }
+        // Squeeze output
         libkeccak_squeeze(&ctx->state, (char *)output);
         return 0;
     }
@@ -449,20 +452,19 @@ int sha3_save_state(sha3_ctx_t *ctx, sha3_intermediate_state_t *state) {
         return -1;
     }
     
-    // Copy the Keccak state (S array)
-    memcpy(state->state_data, ctx->state.S, KECCAK_STATE_SIZE);
-    
-    // Copy the state word array
-    memcpy(state->w, ctx->state.w, sizeof(state->w));
+    // Copy the Keccak state array
+    memcpy(state->S, ctx->state.S, sizeof(state->S));
     
     // Save parameters
-    state->rate = ctx->state.r;
-    state->capacity = ctx->state.c;
-    state->output_len = ctx->output_len;
-    state->variant = ctx->variant;
     state->r = ctx->state.r;
     state->c = ctx->state.c;
     state->n = ctx->state.n;
+    state->b = ctx->state.b;
+    state->w = ctx->state.w;
+    state->l = ctx->state.l;
+    state->nr = ctx->state.nr;
+    state->output_len = ctx->output_len;
+    state->variant = ctx->variant;
     
     return 0;
 }
@@ -480,14 +482,17 @@ int sha3_restore_state(sha3_ctx_t *ctx, const sha3_intermediate_state_t *state) 
         sha3_init(ctx, state->variant, 0);
     }
     
-    // Restore the Keccak state
-    memcpy(ctx->state.S, state->state_data, KECCAK_STATE_SIZE);
-    memcpy(ctx->state.w, state->w, sizeof(state->w));
+    // Restore the Keccak state array
+    memcpy(ctx->state.S, state->S, sizeof(state->S));
     
     // Restore parameters
     ctx->state.r = state->r;
     ctx->state.c = state->c;
     ctx->state.n = state->n;
+    ctx->state.b = state->b;
+    ctx->state.w = state->w;
+    ctx->state.l = state->l;
+    ctx->state.nr = state->nr;
     ctx->output_len = state->output_len;
     
     return 0;
