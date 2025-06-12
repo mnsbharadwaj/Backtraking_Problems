@@ -1034,20 +1034,20 @@ int main() {
     
     // Test 10d: All SHA3 variants verification
     printf("\nAll SHA3 variants verification:\n");
-    const char *test_msg = "Verify all variants";
+    const char *variant_test_msg = "Verify all variants";
     
     // SHA3-224
     sha3_ctx_t ctx224_one, ctx224_inc;
     uint8_t hash224_one[SHA3_224_DIGEST_SIZE], hash224_inc[SHA3_224_DIGEST_SIZE];
     
     sha3_init(&ctx224_one, SHA3_224, 0);
-    sha3_update(&ctx224_one, (uint8_t*)test_msg, strlen(test_msg));
+    sha3_update(&ctx224_one, (uint8_t*)variant_test_msg, strlen(variant_test_msg));
     sha3_final(&ctx224_one, hash224_one);
     sha3_free(&ctx224_one);
     
     sha3_init(&ctx224_inc, SHA3_224, 0);
-    for (size_t i = 0; i < strlen(test_msg); i++) {
-        sha3_update(&ctx224_inc, (uint8_t*)&test_msg[i], 1);  // Byte by byte
+    for (size_t i = 0; i < strlen(variant_test_msg); i++) {
+        sha3_update(&ctx224_inc, (uint8_t*)&variant_test_msg[i], 1);  // Byte by byte
     }
     sha3_final(&ctx224_inc, hash224_inc);
     sha3_free(&ctx224_inc);
@@ -1060,15 +1060,15 @@ int main() {
     uint8_t hash384_one[SHA3_384_DIGEST_SIZE], hash384_inc[SHA3_384_DIGEST_SIZE];
     
     sha3_init(&ctx384_one, SHA3_384, 0);
-    sha3_update(&ctx384_one, (uint8_t*)test_msg, strlen(test_msg));
+    sha3_update(&ctx384_one, (uint8_t*)variant_test_msg, strlen(variant_test_msg));
     sha3_final(&ctx384_one, hash384_one);
     sha3_free(&ctx384_one);
     
     sha3_init(&ctx384_inc, SHA3_384, 0);
     // Process in 5-byte chunks
-    for (size_t i = 0; i < strlen(test_msg); i += 5) {
-        size_t len = (i + 5 > strlen(test_msg)) ? strlen(test_msg) - i : 5;
-        sha3_update(&ctx384_inc, (uint8_t*)&test_msg[i], len);
+    for (size_t i = 0; i < strlen(variant_test_msg); i += 5) {
+        size_t len = (i + 5 > strlen(variant_test_msg)) ? strlen(variant_test_msg) - i : 5;
+        sha3_update(&ctx384_inc, (uint8_t*)&variant_test_msg[i], len);
     }
     sha3_final(&ctx384_inc, hash384_inc);
     sha3_free(&ctx384_inc);
@@ -1081,18 +1081,18 @@ int main() {
     uint8_t hash512_one[SHA3_512_DIGEST_SIZE], hash512_inc[SHA3_512_DIGEST_SIZE];
     
     sha3_init(&ctx512_one, SHA3_512, 0);
-    sha3_update(&ctx512_one, (uint8_t*)test_msg, strlen(test_msg));
+    sha3_update(&ctx512_one, (uint8_t*)variant_test_msg, strlen(variant_test_msg));
     sha3_final(&ctx512_one, hash512_one);
     sha3_free(&ctx512_one);
     
     sha3_init(&ctx512_inc, SHA3_512, 0);
     // Process in varying chunk sizes
-    size_t chunks[] = {7, 3, 4, 5};  // Total: 19 bytes (length of test_msg)
+    size_t chunks[] = {7, 3, 4, 5};  // Total: 19 bytes (length of variant_test_msg)
     size_t offset = 0;
-    for (int i = 0; i < 4 && offset < strlen(test_msg); i++) {
-        size_t len = (offset + chunks[i] > strlen(test_msg)) ? 
-                     strlen(test_msg) - offset : chunks[i];
-        sha3_update(&ctx512_inc, (uint8_t*)&test_msg[offset], len);
+    for (int i = 0; i < 4 && offset < strlen(variant_test_msg); i++) {
+        size_t len = (offset + chunks[i] > strlen(variant_test_msg)) ? 
+                     strlen(variant_test_msg) - offset : chunks[i];
+        sha3_update(&ctx512_inc, (uint8_t*)&variant_test_msg[offset], len);
         offset += len;
     }
     sha3_final(&ctx512_inc, hash512_inc);
