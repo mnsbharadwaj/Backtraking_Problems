@@ -9,6 +9,7 @@
 // Keccak/SHA-3 constants
 #define KECCAK_STATE_SIZE       200  // 1600 bits / 8
 #define KECCAK_MAX_RATE         200  // Maximum rate in bytes
+#define KECCAK_STATE_SIZE_BITS  1600 // State size in bits
 
 // SHA-3 specific block sizes (rate in bytes)
 #define SHA3_224_BLOCK_SIZE     144  // (1600 - 2*224) / 8
@@ -16,11 +17,29 @@
 #define SHA3_384_BLOCK_SIZE     104  // (1600 - 2*384) / 8
 #define SHA3_512_BLOCK_SIZE     72   // (1600 - 2*512) / 8
 
+// SHA-3 rate in bits
+#define SHA3_224_RATE_BITS      1152 // 144 * 8
+#define SHA3_256_RATE_BITS      1088 // 136 * 8
+#define SHA3_384_RATE_BITS      832  // 104 * 8
+#define SHA3_512_RATE_BITS      576  // 72 * 8
+
+// SHA-3 capacity in bits
+#define SHA3_224_CAPACITY_BITS  448  // 2 * 224
+#define SHA3_256_CAPACITY_BITS  512  // 2 * 256
+#define SHA3_384_CAPACITY_BITS  768  // 2 * 384
+#define SHA3_512_CAPACITY_BITS  1024 // 2 * 512
+
 // Output sizes in bytes
 #define SHA3_224_DIGEST_SIZE    28
 #define SHA3_256_DIGEST_SIZE    32
 #define SHA3_384_DIGEST_SIZE    48
 #define SHA3_512_DIGEST_SIZE    64
+
+// Output sizes in bits
+#define SHA3_224_OUTPUT_BITS    224
+#define SHA3_256_OUTPUT_BITS    256
+#define SHA3_384_OUTPUT_BITS    384
+#define SHA3_512_OUTPUT_BITS    512
 
 // HMAC constants
 #define HMAC_IPAD              0x36
@@ -30,6 +49,24 @@
 // SHAKE constants
 #define SHAKE128_CAPACITY      256  // bits
 #define SHAKE256_CAPACITY      512  // bits
+#define SHAKE128_SEMICAPACITY  128  // capacity / 2
+#define SHAKE256_SEMICAPACITY  256  // capacity / 2
+
+// Keccak parameters
+#define KECCAK_WORD_SIZE       64   // w parameter (bits)
+#define KECCAK_L_PARAMETER     6    // log2(w)
+#define KECCAK_NUM_ROUNDS      24   // Number of rounds
+#define KECCAK_NUM_LANES       25   // Number of lanes (5x5)
+
+// Encoding constants for cSHAKE
+#define CSHAKE_BYTEPAD_RATE    8    // Divisor for bytepad
+#define CSHAKE_LEFT_ENCODE_1   1    // Single byte length encoding
+#define CSHAKE_LEFT_ENCODE_2   2    // Two byte length encoding
+#define CSHAKE_MAX_ENCODE_LEN  512  // Maximum encoding buffer size
+
+// Bit manipulation constants
+#define BITS_PER_BYTE          8
+#define BYTE_MASK              0xFF
 
 // Hash types enumeration - alternating SHA and HMAC variants
 typedef enum {
@@ -174,16 +211,16 @@ size_t sha3_get_digest_size(sha3_variant_t variant) {
 static void encode_string(uint8_t *output, size_t *out_len, 
                          const uint8_t *input, size_t in_len) {
     size_t i = 0;
-    size_t bit_len = in_len * 8;
+    size_t bit_len = in_len * BITS_PER_BYTE;
     
     // Left encode the length
-    if (bit_len < 256) {
-        output[i++] = 1;
-        output[i++] = bit_len;
+    if (bit_len < SHAKE256_CAPACITY) {
+        output[i++] = CSHAKE_LEFT_ENCODE_1;
+        output[i++] = bit_len & BYTE_MASK;
     } else {
-        output[i++] = 2;
-        output[i++] = (bit_len >> 8) & 0xFF;
-        output[i++] = bit_len & 0xFF;
+        output[i++] = CSHAKE_LEFT_ENCODE_2;
+        output[i++] = (bit_len >> BITS_PER_BYTE) & BYTE_MASK;
+        output[i++] = bit_len & BYTE_MASK;
     }
     
     // Copy the string
@@ -200,27 +237,27 @@ int sha3_init(sha3_ctx_t *ctx, sha3_variant_t variant, size_t output_len) {
     
     switch (variant) {
         case SHA3_224:
-            libkeccak_spec_sha3(&spec, 224);
+            libkeccak_spec_sha3(&spec, SHA3_224_OUTPUT_BITS);
             ctx->output_len = SHA3_224_DIGEST_SIZE;
             break;
         case SHA3_256:
-            libkeccak_spec_sha3(&spec, 256);
+            libkeccak_spec_sha3(&spec, SHA3_256_OUTPUT_BITS);
             ctx->output_len = SHA3_256_DIGEST_SIZE;
             break;
         case SHA3_384:
-            libkeccak_spec_sha3(&spec, 384);
+            libkeccak_spec_sha3(&spec, SHA3_384_OUTPUT_BITS);
             ctx->output_len = SHA3_384_DIGEST_SIZE;
             break;
         case SHA3_512:
-            libkeccak_spec_sha3(&spec, 512);
+            libkeccak_spec_sha3(&spec, SHA3_512_OUTPUT_BITS);
             ctx->output_len = SHA3_512_DIGEST_SIZE;
             break;
         case SHAKE128:
-            libkeccak_spec_shake(&spec, 128, output_len * 8);
+            libkeccak_spec_shake(&spec, SHAKE128_SEMICAPACITY, output_len * BITS_PER_BYTE);
             ctx->output_len = output_len;
             break;
         case SHAKE256:
-            libkeccak_spec_shake(&spec, 256, output_len * 8);
+            libkeccak_spec_shake(&spec, SHAKE256_SEMICAPACITY, output_len * BITS_PER_BYTE);
             ctx->output_len = output_len;
             break;
         case CSHAKE128:
@@ -240,7 +277,7 @@ int cshake_init(sha3_ctx_t *ctx, sha3_variant_t variant, size_t output_len,
                 const uint8_t *function_name, size_t fn_len,
                 const uint8_t *customization, size_t cust_len) {
     struct libkeccak_spec spec;
-    uint8_t encoded[512];
+    uint8_t encoded[CSHAKE_MAX_ENCODE_LEN];
     size_t encoded_len = 0;
     
     memset(ctx, 0, sizeof(sha3_ctx_t));
@@ -249,9 +286,9 @@ int cshake_init(sha3_ctx_t *ctx, sha3_variant_t variant, size_t output_len,
     
     // Set up spec
     if (variant == CSHAKE128) {
-        libkeccak_spec_shake(&spec, 128, output_len * 8);
+        libkeccak_spec_shake(&spec, SHAKE128_SEMICAPACITY, output_len * BITS_PER_BYTE);
     } else if (variant == CSHAKE256) {
-        libkeccak_spec_shake(&spec, 256, output_len * 8);
+        libkeccak_spec_shake(&spec, SHAKE256_SEMICAPACITY, output_len * BITS_PER_BYTE);
     } else {
         return -1;
     }
@@ -267,11 +304,11 @@ int cshake_init(sha3_ctx_t *ctx, sha3_variant_t variant, size_t output_len,
     
     // Encode and update with bytepad(encode_string(N) || encode_string(S), rate)
     size_t rate = ctx->state.r;
-    size_t w = rate / 8;
+    size_t w = rate / BITS_PER_BYTE;
     
     // Encode w
-    encoded[encoded_len++] = 1;
-    encoded[encoded_len++] = w;
+    encoded[encoded_len++] = CSHAKE_LEFT_ENCODE_1;
+    encoded[encoded_len++] = w & BYTE_MASK;
     
     // Encode N (function name)
     size_t fn_encoded_len;
@@ -294,6 +331,13 @@ int cshake_init(sha3_ctx_t *ctx, sha3_variant_t variant, size_t output_len,
 
 // Update SHA-3 hash
 int sha3_update(sha3_ctx_t *ctx, const uint8_t *data, size_t len) {
+    // Handle NULL data or zero length
+    if (len == 0) {
+        return 0;  // Nothing to update, but not an error
+    }
+    if (!data) {
+        return -1;  // NULL data with non-zero length is an error
+    }
     return libkeccak_update(&ctx->state, (const char *)data, len);
 }
 
@@ -399,6 +443,10 @@ int hmac_sha3_init(hmac_sha3_ctx_t *ctx, sha3_variant_t variant,
 
 // Update HMAC-SHA3
 int hmac_sha3_update(hmac_sha3_ctx_t *ctx, const uint8_t *data, size_t len) {
+    // Handle zero-length data
+    if (len == 0) {
+        return 0;
+    }
     return sha3_update(&ctx->inner_ctx, data, len);
 }
 
@@ -587,6 +635,34 @@ int main() {
     print_hex(hash, SHA3_256_DIGEST_SIZE);
     sha3_free(&ctx);
     
+    // Test 1b: Zero-length data
+    printf("\nTest 1b: SHA3-256 of empty string (zero-length data)\n");
+    sha3_ctx_t ctx_empty;
+    uint8_t hash_empty[SHA3_256_DIGEST_SIZE];
+    
+    sha3_init(&ctx_empty, SHA3_256, 0);
+    sha3_update(&ctx_empty, (uint8_t*)"", 0);  // Zero length update
+    sha3_final(&ctx_empty, hash_empty);
+    
+    printf("Message: (empty)\n");
+    printf("SHA3-256: ");
+    print_hex(hash_empty, SHA3_256_DIGEST_SIZE);
+    sha3_free(&ctx_empty);
+    
+    // Test 1c: No update calls (also zero-length)
+    printf("\nTest 1c: SHA3-256 with no update calls\n");
+    sha3_ctx_t ctx_no_update;
+    uint8_t hash_no_update[SHA3_256_DIGEST_SIZE];
+    
+    sha3_init(&ctx_no_update, SHA3_256, 0);
+    // No update call at all
+    sha3_final(&ctx_no_update, hash_no_update);
+    
+    printf("Message: (no update called)\n");
+    printf("SHA3-256: ");
+    print_hex(hash_no_update, SHA3_256_DIGEST_SIZE);
+    sha3_free(&ctx_no_update);
+    
     // Test 2: Chunked processing (200-byte chunks)
     printf("\nTest 2: Processing 200-byte chunks\n");
     sha3_ctx_t ctx2;
@@ -626,6 +702,22 @@ int main() {
     printf("HMAC-SHA3-256: ");
     print_hex(hmac_output, SHA3_256_DIGEST_SIZE);
     hmac_sha3_free(&hmac_ctx);
+    
+    // Test 3b: HMAC with empty message
+    printf("\nTest 3b: HMAC-SHA3-256 with empty message\n");
+    hmac_sha3_ctx_t hmac_ctx_empty;
+    uint8_t hmac_output_empty[SHA3_256_DIGEST_SIZE];
+    
+    hmac_sha3_init(&hmac_ctx_empty, HMAC_SHA3_256, (uint8_t*)key, strlen(key));
+    // No update or zero-length update
+    hmac_sha3_update(&hmac_ctx_empty, (uint8_t*)"", 0);
+    hmac_sha3_final(&hmac_ctx_empty, hmac_output_empty);
+    
+    printf("Key: %s\n", key);
+    printf("Message: (empty)\n");
+    printf("HMAC-SHA3-256: ");
+    print_hex(hmac_output_empty, SHA3_256_DIGEST_SIZE);
+    hmac_sha3_free(&hmac_ctx_empty);
     
     // Test 4: SHAKE256 with variable output
     printf("\nTest 4: SHAKE256 with 64-byte output\n");
@@ -722,6 +814,106 @@ int main() {
     printf("SHA3-512: ");
     print_hex(hash512, SHA3_512_DIGEST_SIZE);
     sha3_free(&ctx512);
+    
+    // Test 8: HMAC-SHA3-512 with intermediate state loading
+    printf("\nTest 8: HMAC-SHA3-512 with intermediate state loading\n");
+    
+    // First, create a real HMAC state we can save and load
+    hmac_sha3_ctx_t hmac512_ctx;
+    uint8_t hmac512_key[] = "This is a test key for HMAC-SHA3-512";
+    const char *hmac512_msg_part1 = "First part of the message - ";
+    const char *hmac512_msg_part2 = "Second part of the message";
+    uint8_t hmac512_output1[SHA3_512_DIGEST_SIZE];
+    uint8_t hmac512_output2[SHA3_512_DIGEST_SIZE];
+    
+    // Initialize HMAC-SHA3-512
+    hmac_sha3_init(&hmac512_ctx, HMAC_SHA3_512, hmac512_key, sizeof(hmac512_key) - 1);
+    
+    // Process first part
+    hmac_sha3_update(&hmac512_ctx, (uint8_t*)hmac512_msg_part1, strlen(hmac512_msg_part1));
+    
+    // Simulate saving state here
+    // In real application, you would serialize hmac512_ctx internal state
+    hmac_sha3_intermediate_state_t hmac512_state = {0};
+    
+    // Manually populate the state (in real use, this would come from saved data)
+    // Inner state parameters for HMAC-SHA3-512
+    hmac512_state.inner_state.variant = SHA3_512;
+    hmac512_state.inner_state.output_len = SHA3_512_DIGEST_SIZE;
+    hmac512_state.inner_state.r = SHA3_512_RATE_BITS;
+    hmac512_state.inner_state.c = SHA3_512_CAPACITY_BITS;
+    hmac512_state.inner_state.n = SHA3_512_OUTPUT_BITS;
+    hmac512_state.inner_state.b = KECCAK_STATE_SIZE_BITS;
+    hmac512_state.inner_state.w = KECCAK_WORD_SIZE;
+    hmac512_state.inner_state.l = KECCAK_L_PARAMETER;
+    hmac512_state.inner_state.nr = KECCAK_NUM_ROUNDS;
+    
+    // Outer state parameters for HMAC-SHA3-512
+    hmac512_state.outer_state.variant = SHA3_512;
+    hmac512_state.outer_state.output_len = SHA3_512_DIGEST_SIZE;
+    hmac512_state.outer_state.r = SHA3_512_RATE_BITS;
+    hmac512_state.outer_state.c = SHA3_512_CAPACITY_BITS;
+    hmac512_state.outer_state.n = SHA3_512_OUTPUT_BITS;
+    hmac512_state.outer_state.b = KECCAK_STATE_SIZE_BITS;
+    hmac512_state.outer_state.w = KECCAK_WORD_SIZE;
+    hmac512_state.outer_state.l = KECCAK_L_PARAMETER;
+    hmac512_state.outer_state.nr = KECCAK_NUM_ROUNDS;
+    
+    // HMAC specific parameters
+    hmac512_state.block_size = SHA3_512_BLOCK_SIZE;
+    hmac512_state.variant = SHA3_512;
+    
+    // Copy key pad (this would be saved from the actual context)
+    memcpy(hmac512_state.key_pad, hmac512_ctx.key_pad, sizeof(hmac512_state.key_pad));
+    
+    // Note: In real use, you would also need to save the actual Keccak state arrays
+    // hmac512_state.inner_state.state_bytes would contain the serialized inner state
+    // hmac512_state.outer_state.state_bytes would contain the serialized outer state
+    
+    // Continue with original context to get reference hash
+    hmac_sha3_update(&hmac512_ctx, (uint8_t*)hmac512_msg_part2, strlen(hmac512_msg_part2));
+    hmac_sha3_final(&hmac512_ctx, hmac512_output1);
+    
+    printf("Original HMAC-SHA3-512 (continuous): ");
+    print_hex(hmac512_output1, SHA3_512_DIGEST_SIZE);
+    
+    // Now test loading from state (if we had valid state data)
+    printf("\nNote: Complete state loading requires actual state data from libkeccak\n");
+    printf("In production, use libkeccak_state_marshal/unmarshal functions\n");
+    
+    // Example of the API usage:
+    // hmac_sha3_ctx_t hmac512_loaded;
+    // hmac_sha3_init_from_state(&hmac512_loaded, &hmac512_state);
+    // hmac_sha3_update(&hmac512_loaded, (uint8_t*)hmac512_msg_part2, strlen(hmac512_msg_part2));
+    // hmac_sha3_final(&hmac512_loaded, hmac512_output2);
+    
+    // Or direct finalization:
+    // hmac_sha3_final_from_state(&hmac512_state, 
+    //                            (uint8_t*)hmac512_msg_part2, 
+    //                            strlen(hmac512_msg_part2), 
+    //                            hmac512_output2);
+    
+    hmac_sha3_free(&hmac512_ctx);
+    
+    // Test 9: Processing exactly 200-byte chunks with state
+    printf("\nTest 9: Processing exactly 200-byte chunks\n");
+    sha3_ctx_t chunk_test_ctx;
+    uint8_t chunk_200[KECCAK_MAX_RATE];
+    uint8_t chunk_hash[SHA3_256_DIGEST_SIZE];
+    
+    sha3_init(&chunk_test_ctx, SHA3_256, 0);
+    
+    // Process 5 chunks of exactly 200 bytes each (1000 bytes total)
+    for (int i = 0; i < 5; i++) {
+        memset(chunk_200, 'A' + i, KECCAK_MAX_RATE);
+        sha3_update(&chunk_test_ctx, chunk_200, KECCAK_MAX_RATE);
+        printf("Processed chunk %d (200 bytes of '%c')\n", i + 1, 'A' + i);
+    }
+    
+    sha3_final(&chunk_test_ctx, chunk_hash);
+    printf("Hash of 1000 bytes (5 x 200-byte chunks): ");
+    print_hex(chunk_hash, SHA3_256_DIGEST_SIZE);
+    sha3_free(&chunk_test_ctx);
     
     printf("\n=== All tests completed ===\n");
     
