@@ -915,6 +915,192 @@ int main() {
     print_hex(chunk_hash, SHA3_256_DIGEST_SIZE);
     sha3_free(&chunk_test_ctx);
     
+    // Test 10: Verification - Step-by-step vs One-shot hashing
+    printf("\nTest 10: Verification - Step-by-step vs One-shot hashing\n");
+    printf("This test verifies that incremental hashing produces the same result as one-shot\n\n");
+    
+    // Test data
+    const char *test_data = "This is a test message that will be hashed both incrementally and in one shot to verify they produce identical results.";
+    size_t total_len = strlen(test_data);
+    
+    // Test 10a: SHA3-256 verification
+    printf("SHA3-256 Verification:\n");
+    sha3_ctx_t sha256_oneshot, sha256_incremental;
+    uint8_t hash_oneshot[SHA3_256_DIGEST_SIZE];
+    uint8_t hash_incremental[SHA3_256_DIGEST_SIZE];
+    
+    // One-shot hashing
+    sha3_init(&sha256_oneshot, SHA3_256, 0);
+    sha3_update(&sha256_oneshot, (uint8_t*)test_data, total_len);
+    sha3_final(&sha256_oneshot, hash_oneshot);
+    printf("One-shot hash:     ");
+    print_hex(hash_oneshot, SHA3_256_DIGEST_SIZE);
+    sha3_free(&sha256_oneshot);
+    
+    // Incremental hashing (simulate chunked processing)
+    sha3_init(&sha256_incremental, SHA3_256, 0);
+    size_t chunk_size = 17;  // Use odd size to test partial blocks
+    size_t processed = 0;
+    while (processed < total_len) {
+        size_t to_process = (processed + chunk_size > total_len) ? 
+                           (total_len - processed) : chunk_size;
+        sha3_update(&sha256_incremental, (uint8_t*)test_data + processed, to_process);
+        processed += to_process;
+    }
+    sha3_final(&sha256_incremental, hash_incremental);
+    printf("Incremental hash:  ");
+    print_hex(hash_incremental, SHA3_256_DIGEST_SIZE);
+    sha3_free(&sha256_incremental);
+    
+    // Verify they match
+    if (memcmp(hash_oneshot, hash_incremental, SHA3_256_DIGEST_SIZE) == 0) {
+        printf("✓ SHA3-256: Hashes match!\n");
+    } else {
+        printf("✗ SHA3-256: Hashes DO NOT match! ERROR!\n");
+    }
+    
+    // Test 10b: HMAC-SHA3-256 verification
+    printf("\nHMAC-SHA3-256 Verification:\n");
+    hmac_sha3_ctx_t hmac_oneshot, hmac_incremental;
+    uint8_t hmac_hash_oneshot[SHA3_256_DIGEST_SIZE];
+    uint8_t hmac_hash_incremental[SHA3_256_DIGEST_SIZE];
+    const char *hmac_key = "test_key_for_hmac";
+    
+    // One-shot HMAC
+    hmac_sha3_init(&hmac_oneshot, HMAC_SHA3_256, (uint8_t*)hmac_key, strlen(hmac_key));
+    hmac_sha3_update(&hmac_oneshot, (uint8_t*)test_data, total_len);
+    hmac_sha3_final(&hmac_oneshot, hmac_hash_oneshot);
+    printf("One-shot HMAC:     ");
+    print_hex(hmac_hash_oneshot, SHA3_256_DIGEST_SIZE);
+    hmac_sha3_free(&hmac_oneshot);
+    
+    // Incremental HMAC
+    hmac_sha3_init(&hmac_incremental, HMAC_SHA3_256, (uint8_t*)hmac_key, strlen(hmac_key));
+    processed = 0;
+    chunk_size = 23;  // Different chunk size
+    while (processed < total_len) {
+        size_t to_process = (processed + chunk_size > total_len) ? 
+                           (total_len - processed) : chunk_size;
+        hmac_sha3_update(&hmac_incremental, (uint8_t*)test_data + processed, to_process);
+        processed += to_process;
+    }
+    hmac_sha3_final(&hmac_incremental, hmac_hash_incremental);
+    printf("Incremental HMAC:  ");
+    print_hex(hmac_hash_incremental, SHA3_256_DIGEST_SIZE);
+    hmac_sha3_free(&hmac_incremental);
+    
+    // Verify they match
+    if (memcmp(hmac_hash_oneshot, hmac_hash_incremental, SHA3_256_DIGEST_SIZE) == 0) {
+        printf("✓ HMAC-SHA3-256: Hashes match!\n");
+    } else {
+        printf("✗ HMAC-SHA3-256: Hashes DO NOT match! ERROR!\n");
+    }
+    
+    // Test 10c: 200-byte chunk verification
+    printf("\n200-byte chunk processing verification:\n");
+    sha3_ctx_t sha256_200chunks;
+    uint8_t hash_200chunks[SHA3_256_DIGEST_SIZE];
+    
+    // Create exactly 600 bytes of data (3 x 200-byte chunks)
+    uint8_t large_data[3 * KECCAK_MAX_RATE];
+    for (int i = 0; i < 3 * KECCAK_MAX_RATE; i++) {
+        large_data[i] = (uint8_t)(i % 256);
+    }
+    
+    // One-shot hash of 600 bytes
+    sha3_init(&sha256_oneshot, SHA3_256, 0);
+    sha3_update(&sha256_oneshot, large_data, 3 * KECCAK_MAX_RATE);
+    sha3_final(&sha256_oneshot, hash_oneshot);
+    printf("One-shot (600 bytes):      ");
+    print_hex(hash_oneshot, SHA3_256_DIGEST_SIZE);
+    sha3_free(&sha256_oneshot);
+    
+    // Hash in 200-byte chunks
+    sha3_init(&sha256_200chunks, SHA3_256, 0);
+    for (int i = 0; i < 3; i++) {
+        sha3_update(&sha256_200chunks, large_data + (i * KECCAK_MAX_RATE), KECCAK_MAX_RATE);
+    }
+    sha3_final(&sha256_200chunks, hash_200chunks);
+    printf("200-byte chunks (3x200):   ");
+    print_hex(hash_200chunks, SHA3_256_DIGEST_SIZE);
+    sha3_free(&sha256_200chunks);
+    
+    // Verify they match
+    if (memcmp(hash_oneshot, hash_200chunks, SHA3_256_DIGEST_SIZE) == 0) {
+        printf("✓ 200-byte chunks: Hashes match!\n");
+    } else {
+        printf("✗ 200-byte chunks: Hashes DO NOT match! ERROR!\n");
+    }
+    
+    // Test 10d: All SHA3 variants verification
+    printf("\nAll SHA3 variants verification:\n");
+    const char *test_msg = "Verify all variants";
+    
+    // SHA3-224
+    sha3_ctx_t ctx224_one, ctx224_inc;
+    uint8_t hash224_one[SHA3_224_DIGEST_SIZE], hash224_inc[SHA3_224_DIGEST_SIZE];
+    
+    sha3_init(&ctx224_one, SHA3_224, 0);
+    sha3_update(&ctx224_one, (uint8_t*)test_msg, strlen(test_msg));
+    sha3_final(&ctx224_one, hash224_one);
+    sha3_free(&ctx224_one);
+    
+    sha3_init(&ctx224_inc, SHA3_224, 0);
+    for (size_t i = 0; i < strlen(test_msg); i++) {
+        sha3_update(&ctx224_inc, (uint8_t*)&test_msg[i], 1);  // Byte by byte
+    }
+    sha3_final(&ctx224_inc, hash224_inc);
+    sha3_free(&ctx224_inc);
+    
+    printf("SHA3-224: %s\n", 
+           memcmp(hash224_one, hash224_inc, SHA3_224_DIGEST_SIZE) == 0 ? "✓ Match" : "✗ ERROR");
+    
+    // SHA3-384
+    sha3_ctx_t ctx384_one, ctx384_inc;
+    uint8_t hash384_one[SHA3_384_DIGEST_SIZE], hash384_inc[SHA3_384_DIGEST_SIZE];
+    
+    sha3_init(&ctx384_one, SHA3_384, 0);
+    sha3_update(&ctx384_one, (uint8_t*)test_msg, strlen(test_msg));
+    sha3_final(&ctx384_one, hash384_one);
+    sha3_free(&ctx384_one);
+    
+    sha3_init(&ctx384_inc, SHA3_384, 0);
+    // Process in 5-byte chunks
+    for (size_t i = 0; i < strlen(test_msg); i += 5) {
+        size_t len = (i + 5 > strlen(test_msg)) ? strlen(test_msg) - i : 5;
+        sha3_update(&ctx384_inc, (uint8_t*)&test_msg[i], len);
+    }
+    sha3_final(&ctx384_inc, hash384_inc);
+    sha3_free(&ctx384_inc);
+    
+    printf("SHA3-384: %s\n", 
+           memcmp(hash384_one, hash384_inc, SHA3_384_DIGEST_SIZE) == 0 ? "✓ Match" : "✗ ERROR");
+    
+    // SHA3-512
+    sha3_ctx_t ctx512_one, ctx512_inc;
+    uint8_t hash512_one[SHA3_512_DIGEST_SIZE], hash512_inc[SHA3_512_DIGEST_SIZE];
+    
+    sha3_init(&ctx512_one, SHA3_512, 0);
+    sha3_update(&ctx512_one, (uint8_t*)test_msg, strlen(test_msg));
+    sha3_final(&ctx512_one, hash512_one);
+    sha3_free(&ctx512_one);
+    
+    sha3_init(&ctx512_inc, SHA3_512, 0);
+    // Process in varying chunk sizes
+    size_t chunks[] = {7, 3, 4, 5};  // Total: 19 bytes (length of test_msg)
+    size_t offset = 0;
+    for (int i = 0; i < 4 && offset < strlen(test_msg); i++) {
+        size_t len = (offset + chunks[i] > strlen(test_msg)) ? 
+                     strlen(test_msg) - offset : chunks[i];
+        sha3_update(&ctx512_inc, (uint8_t*)&test_msg[offset], len);
+        offset += len;
+    }
+    sha3_final(&ctx512_inc, hash512_inc);
+    sha3_free(&ctx512_inc);
+    
+    printf("SHA3-512: %s\n", 
+           memcmp(hash512_one, hash512_inc, SHA3_512_DIGEST_SIZE) == 0 ? "✓ Match" : "✗ ERROR");
+    
     printf("\n=== All tests completed ===\n");
     
     return 0;
