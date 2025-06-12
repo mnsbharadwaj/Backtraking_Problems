@@ -109,36 +109,26 @@ int hmac_sha3_final(hmac_sha3_ctx_t *ctx, uint8_t *output);
 void sha3_free(sha3_ctx_t *ctx);
 void hmac_sha3_free(hmac_sha3_ctx_t *ctx);
 
-// State save/restore functions
-int sha3_save_state(sha3_ctx_t *ctx, sha3_intermediate_state_t *state);
-int sha3_restore_state(sha3_ctx_t *ctx, const sha3_intermediate_state_t *state);
+// Load state functions (restore from intermediate state)
 int sha3_init_from_state(sha3_ctx_t *ctx, const sha3_intermediate_state_t *state);
+int hmac_sha3_init_from_state(hmac_sha3_ctx_t *ctx, const hmac_sha3_intermediate_state_t *state);
 
-// Direct state processing
+// Direct state processing (finalize from state + additional data)
 int sha3_final_from_state(const sha3_intermediate_state_t *state, 
                          const uint8_t *additional_data, size_t additional_len,
                          uint8_t *output);
-
-// HMAC state save/restore functions
-int hmac_sha3_save_state(hmac_sha3_ctx_t *ctx, hmac_sha3_intermediate_state_t *state);
-int hmac_sha3_restore_state(hmac_sha3_ctx_t *ctx, const hmac_sha3_intermediate_state_t *state);
-int hmac_sha3_init_from_state(hmac_sha3_ctx_t *ctx, const hmac_sha3_intermediate_state_t *state);
-
-// Direct HMAC state processing
 int hmac_sha3_final_from_state(const hmac_sha3_intermediate_state_t *state,
                               const uint8_t *additional_data, size_t additional_len,
                               uint8_t *output);
 
-// Helper function to get block size for a variant
+// Helper functions
 size_t sha3_get_block_size(sha3_variant_t variant);
-
-// Helper function to get digest size for a variant
 size_t sha3_get_digest_size(sha3_variant_t variant);
 
 #endif // SHA3_WRAPPER_H
 
 // Implementation
-#ifdef SHA3_WRAPPER_IMPLEMENTATION
+#include <stdio.h>
 
 // Helper function to get block size
 size_t sha3_get_block_size(sha3_variant_t variant) {
@@ -446,31 +436,8 @@ void hmac_sha3_free(hmac_sha3_ctx_t *ctx) {
     memset(ctx->key_pad, 0, sizeof(ctx->key_pad));
 }
 
-// Save current state to intermediate state structure
-int sha3_save_state(sha3_ctx_t *ctx, sha3_intermediate_state_t *state) {
-    if (!ctx || !state) {
-        return -1;
-    }
-    
-    // Copy the Keccak state array
-    memcpy(state->S, ctx->state.S, sizeof(state->S));
-    
-    // Save parameters
-    state->r = ctx->state.r;
-    state->c = ctx->state.c;
-    state->n = ctx->state.n;
-    state->b = ctx->state.b;
-    state->w = ctx->state.w;
-    state->l = ctx->state.l;
-    state->nr = ctx->state.nr;
-    state->output_len = ctx->output_len;
-    state->variant = ctx->variant;
-    
-    return 0;
-}
-
-// Restore state from intermediate state structure
-int sha3_restore_state(sha3_ctx_t *ctx, const sha3_intermediate_state_t *state) {
+// Initialize context from saved state
+int sha3_init_from_state(sha3_ctx_t *ctx, const sha3_intermediate_state_t *state) {
     if (!ctx || !state) {
         return -1;
     }
@@ -498,19 +465,14 @@ int sha3_restore_state(sha3_ctx_t *ctx, const sha3_intermediate_state_t *state) 
     return 0;
 }
 
-// Initialize context directly from saved state
-int sha3_init_from_state(sha3_ctx_t *ctx, const sha3_intermediate_state_t *state) {
-    return sha3_restore_state(ctx, state);
-}
-
 // Compute final hash directly from state and additional data
 int sha3_final_from_state(const sha3_intermediate_state_t *state, 
                          const uint8_t *additional_data, size_t additional_len,
                          uint8_t *output) {
     sha3_ctx_t ctx;
     
-    // Restore the state
-    if (sha3_restore_state(&ctx, state) < 0) {
+    // Initialize from state
+    if (sha3_init_from_state(&ctx, state) < 0) {
         return -1;
     }
     
@@ -529,31 +491,8 @@ int sha3_final_from_state(const sha3_intermediate_state_t *state,
     return result;
 }
 
-// Save HMAC state
-int hmac_sha3_save_state(hmac_sha3_ctx_t *ctx, hmac_sha3_intermediate_state_t *state) {
-    if (!ctx || !state) {
-        return -1;
-    }
-    
-    // Save both inner and outer states
-    if (sha3_save_state(&ctx->inner_ctx, &state->inner_state) < 0) {
-        return -1;
-    }
-    
-    if (sha3_save_state(&ctx->outer_ctx, &state->outer_state) < 0) {
-        return -1;
-    }
-    
-    // Save key pad and parameters
-    memcpy(state->key_pad, ctx->key_pad, sizeof(ctx->key_pad));
-    state->block_size = ctx->block_size;
-    state->variant = ctx->inner_ctx.variant;
-    
-    return 0;
-}
-
-// Restore HMAC state
-int hmac_sha3_restore_state(hmac_sha3_ctx_t *ctx, const hmac_sha3_intermediate_state_t *state) {
+// Initialize HMAC context from saved state
+int hmac_sha3_init_from_state(hmac_sha3_ctx_t *ctx, const hmac_sha3_intermediate_state_t *state) {
     if (!ctx || !state) {
         return -1;
     }
@@ -562,11 +501,11 @@ int hmac_sha3_restore_state(hmac_sha3_ctx_t *ctx, const hmac_sha3_intermediate_s
     memset(ctx, 0, sizeof(hmac_sha3_ctx_t));
     
     // Restore both inner and outer states
-    if (sha3_restore_state(&ctx->inner_ctx, &state->inner_state) < 0) {
+    if (sha3_init_from_state(&ctx->inner_ctx, &state->inner_state) < 0) {
         return -1;
     }
     
-    if (sha3_restore_state(&ctx->outer_ctx, &state->outer_state) < 0) {
+    if (sha3_init_from_state(&ctx->outer_ctx, &state->outer_state) < 0) {
         return -1;
     }
     
@@ -577,19 +516,14 @@ int hmac_sha3_restore_state(hmac_sha3_ctx_t *ctx, const hmac_sha3_intermediate_s
     return 0;
 }
 
-// Initialize HMAC context from saved state
-int hmac_sha3_init_from_state(hmac_sha3_ctx_t *ctx, const hmac_sha3_intermediate_state_t *state) {
-    return hmac_sha3_restore_state(ctx, state);
-}
-
 // Compute final HMAC directly from state and additional data
 int hmac_sha3_final_from_state(const hmac_sha3_intermediate_state_t *state,
                               const uint8_t *additional_data, size_t additional_len,
                               uint8_t *output) {
     hmac_sha3_ctx_t ctx;
     
-    // Restore the state
-    if (hmac_sha3_restore_state(&ctx, state) < 0) {
+    // Initialize from state
+    if (hmac_sha3_init_from_state(&ctx, state) < 0) {
         return -1;
     }
     
@@ -608,13 +542,7 @@ int hmac_sha3_final_from_state(const hmac_sha3_intermediate_state_t *state,
     return result;
 }
 
-#endif // SHA3_WRAPPER_IMPLEMENTATION
-
 // Example usage
-#ifdef SHA3_EXAMPLE
-
-#include <stdio.h>
-
 void print_hex(const uint8_t *data, size_t len) {
     for (size_t i = 0; i < len; i++) {
         printf("%02x", data[i]);
@@ -622,7 +550,7 @@ void print_hex(const uint8_t *data, size_t len) {
     printf("\n");
 }
 
-int main() {
+int example_usage() {
     // Example 1: SHA3-256 with chunked input
     printf("SHA3-256 example:\n");
     sha3_ctx_t sha3_ctx;
@@ -642,7 +570,24 @@ int main() {
     print_hex(hash, SHA3_256_DIGEST_SIZE);
     sha3_free(&sha3_ctx);
     
-    // Example 2: HMAC-SHA3-256
+    // Example 2: Using intermediate state
+    printf("\nUsing intermediate state:\n");
+    sha3_intermediate_state_t state = {0};
+    
+    // Assume state is populated from external source
+    // Initialize state.S, state.r, state.c, etc.
+    state.variant = SHA3_256;
+    state.output_len = SHA3_256_DIGEST_SIZE;
+    
+    // Compute hash from state + additional data
+    uint8_t additional_data[] = "Additional data to hash";
+    uint8_t hash2[SHA3_256_DIGEST_SIZE];
+    
+    sha3_final_from_state(&state, additional_data, sizeof(additional_data)-1, hash2);
+    printf("Hash from state: ");
+    print_hex(hash2, SHA3_256_DIGEST_SIZE);
+    
+    // Example 3: HMAC-SHA3-256
     printf("\nHMAC-SHA3-256 example:\n");
     hmac_sha3_ctx_t hmac_ctx;
     uint8_t hmac_output[SHA3_256_DIGEST_SIZE];
@@ -655,62 +600,5 @@ int main() {
     print_hex(hmac_output, SHA3_256_DIGEST_SIZE);
     hmac_sha3_free(&hmac_ctx);
     
-    // Example 3: State save/restore with 200-byte chunks
-    printf("\nProcessing 200-byte chunks with state saving:\n");
-    sha3_ctx_t ctx;
-    sha3_intermediate_state_t saved_state;
-    uint8_t final_hash[SHA3_256_DIGEST_SIZE];
-    uint8_t data_chunk[KECCAK_MAX_RATE];
-    
-    // Initialize and process first chunk
-    sha3_init(&ctx, SHA3_256, 0);
-    memset(data_chunk, 'A', KECCAK_MAX_RATE);
-    sha3_update(&ctx, data_chunk, KECCAK_MAX_RATE);
-    
-    // Save state
-    sha3_save_state(&ctx, &saved_state);
-    printf("State saved after %d bytes\n", KECCAK_MAX_RATE);
-    
-    // Process directly from saved state with another chunk
-    memset(data_chunk, 'B', KECCAK_MAX_RATE);
-    sha3_final_from_state(&saved_state, data_chunk, KECCAK_MAX_RATE, final_hash);
-    printf("Final hash after %d bytes total: ", 2 * KECCAK_MAX_RATE);
-    print_hex(final_hash, SHA3_256_DIGEST_SIZE);
-    
-    sha3_free(&ctx);
-    
-    // Example 4: HMAC state save/restore
-    printf("\nHMAC-SHA3-256 state save/restore:\n");
-    hmac_sha3_ctx_t hmac_ctx1, hmac_ctx2;
-    hmac_sha3_intermediate_state_t hmac_state;
-    uint8_t hmac_out1[SHA3_256_DIGEST_SIZE], hmac_out2[SHA3_256_DIGEST_SIZE];
-    
-    // Start HMAC
-    hmac_sha3_init(&hmac_ctx1, HMAC_SHA3_256, key, strlen((char*)key));
-    hmac_sha3_update(&hmac_ctx1, data_chunk, KECCAK_MAX_RATE);
-    
-    // Save state
-    hmac_sha3_save_state(&hmac_ctx1, &hmac_state);
-    
-    // Continue normally
-    memset(data_chunk, 'C', KECCAK_MAX_RATE);
-    hmac_sha3_update(&hmac_ctx1, data_chunk, KECCAK_MAX_RATE);
-    hmac_sha3_final(&hmac_ctx1, hmac_out1);
-    
-    // Restore and continue
-    hmac_sha3_init_from_state(&hmac_ctx2, &hmac_state);
-    hmac_sha3_update(&hmac_ctx2, data_chunk, KECCAK_MAX_RATE);
-    hmac_sha3_final(&hmac_ctx2, hmac_out2);
-    
-    printf("HMAC from continuous: ");
-    print_hex(hmac_out1, SHA3_256_DIGEST_SIZE);
-    printf("HMAC from restored:   ");
-    print_hex(hmac_out2, SHA3_256_DIGEST_SIZE);
-    
-    hmac_sha3_free(&hmac_ctx1);
-    hmac_sha3_free(&hmac_ctx2);
-    
     return 0;
 }
-
-#endif // SHA3_EXAMPLE
