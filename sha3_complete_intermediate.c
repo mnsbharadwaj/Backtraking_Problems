@@ -569,55 +569,161 @@ void print_hex(const uint8_t *data, size_t len) {
     printf("\n");
 }
 
-int example_usage() {
-    // Example 1: SHA3-256 with chunked input
-    printf("SHA3-256 example:\n");
-    sha3_ctx_t sha3_ctx;
+int main() {
+    printf("=== SHA-3 Wrapper Test Program ===\n\n");
+    
+    // Test 1: Basic SHA3-256
+    printf("Test 1: Basic SHA3-256\n");
+    sha3_ctx_t ctx;
     uint8_t hash[SHA3_256_DIGEST_SIZE];
+    const char *msg = "Hello, World!";
     
-    sha3_init(&sha3_ctx, SHA3_256, 0);
+    sha3_init(&ctx, SHA3_256, 0);
+    sha3_update(&ctx, (uint8_t*)msg, strlen(msg));
+    sha3_final(&ctx, hash);
     
-    // Process data in 200-byte chunks
-    uint8_t chunk1[KECCAK_MAX_RATE] = "First chunk of data...";
-    uint8_t chunk2[KECCAK_MAX_RATE] = "Second chunk of data...";
-    
-    sha3_update(&sha3_ctx, chunk1, strlen((char*)chunk1));
-    sha3_update(&sha3_ctx, chunk2, strlen((char*)chunk2));
-    
-    sha3_final(&sha3_ctx, hash);
-    printf("Hash: ");
+    printf("Message: %s\n", msg);
+    printf("SHA3-256: ");
     print_hex(hash, SHA3_256_DIGEST_SIZE);
-    sha3_free(&sha3_ctx);
+    sha3_free(&ctx);
     
-    // Example 2: Using intermediate state
-    printf("\nUsing intermediate state:\n");
-    sha3_intermediate_state_t state = {0};
-    
-    // Assume state is populated from external source
-    // Initialize state.S, state.r, state.c, etc.
-    state.variant = SHA3_256;
-    state.output_len = SHA3_256_DIGEST_SIZE;
-    
-    // Compute hash from state + additional data
-    uint8_t additional_data[] = "Additional data to hash";
+    // Test 2: Chunked processing (200-byte chunks)
+    printf("\nTest 2: Processing 200-byte chunks\n");
+    sha3_ctx_t ctx2;
+    uint8_t chunk[KECCAK_MAX_RATE];
     uint8_t hash2[SHA3_256_DIGEST_SIZE];
     
-    sha3_final_from_state(&state, additional_data, sizeof(additional_data)-1, hash2);
-    printf("Hash from state: ");
-    print_hex(hash2, SHA3_256_DIGEST_SIZE);
+    sha3_init(&ctx2, SHA3_256, 0);
     
-    // Example 3: HMAC-SHA3-256
-    printf("\nHMAC-SHA3-256 example:\n");
+    // First chunk - fill with 'A'
+    memset(chunk, 'A', KECCAK_MAX_RATE);
+    sha3_update(&ctx2, chunk, KECCAK_MAX_RATE);
+    printf("Processed first 200-byte chunk (all 'A's)\n");
+    
+    // Second chunk - fill with 'B'
+    memset(chunk, 'B', KECCAK_MAX_RATE);
+    sha3_update(&ctx2, chunk, KECCAK_MAX_RATE);
+    printf("Processed second 200-byte chunk (all 'B's)\n");
+    
+    sha3_final(&ctx2, hash2);
+    printf("Final hash: ");
+    print_hex(hash2, SHA3_256_DIGEST_SIZE);
+    sha3_free(&ctx2);
+    
+    // Test 3: HMAC-SHA3-256
+    printf("\nTest 3: HMAC-SHA3-256\n");
     hmac_sha3_ctx_t hmac_ctx;
     uint8_t hmac_output[SHA3_256_DIGEST_SIZE];
-    uint8_t key[] = "secret key";
+    const char *key = "my secret key";
+    const char *hmac_msg = "Message to authenticate";
     
-    hmac_sha3_init(&hmac_ctx, HMAC_SHA3_256, key, strlen((char*)key));
-    hmac_sha3_update(&hmac_ctx, (uint8_t*)"Message to authenticate", 23);
+    hmac_sha3_init(&hmac_ctx, HMAC_SHA3_256, (uint8_t*)key, strlen(key));
+    hmac_sha3_update(&hmac_ctx, (uint8_t*)hmac_msg, strlen(hmac_msg));
     hmac_sha3_final(&hmac_ctx, hmac_output);
-    printf("HMAC: ");
+    
+    printf("Key: %s\n", key);
+    printf("Message: %s\n", hmac_msg);
+    printf("HMAC-SHA3-256: ");
     print_hex(hmac_output, SHA3_256_DIGEST_SIZE);
     hmac_sha3_free(&hmac_ctx);
+    
+    // Test 4: SHAKE256 with variable output
+    printf("\nTest 4: SHAKE256 with 64-byte output\n");
+    sha3_ctx_t shake_ctx;
+    uint8_t shake_output[64];
+    const char *shake_msg = "SHAKE test message";
+    
+    sha3_init(&shake_ctx, SHAKE256, 64);  // 64 bytes output
+    sha3_update(&shake_ctx, (uint8_t*)shake_msg, strlen(shake_msg));
+    sha3_final(&shake_ctx, shake_output);
+    
+    printf("Message: %s\n", shake_msg);
+    printf("SHAKE256 (64 bytes): ");
+    print_hex(shake_output, 64);
+    sha3_free(&shake_ctx);
+    
+    // Test 5: cSHAKE128
+    printf("\nTest 5: cSHAKE128 with customization\n");
+    sha3_ctx_t cshake_ctx;
+    uint8_t cshake_output[32];
+    const char *cshake_msg = "cSHAKE test";
+    const char *function_name = "Email Signature";
+    const char *customization = "EmailApp v1.0";
+    
+    cshake_init(&cshake_ctx, CSHAKE128, 32,
+                (uint8_t*)function_name, strlen(function_name),
+                (uint8_t*)customization, strlen(customization));
+    sha3_update(&cshake_ctx, (uint8_t*)cshake_msg, strlen(cshake_msg));
+    sha3_final(&cshake_ctx, cshake_output);
+    
+    printf("Message: %s\n", cshake_msg);
+    printf("Function: %s\n", function_name);
+    printf("Customization: %s\n", customization);
+    printf("cSHAKE128 (32 bytes): ");
+    print_hex(cshake_output, 32);
+    sha3_free(&cshake_ctx);
+    
+    // Test 6: Loading from intermediate state
+    printf("\nTest 6: Loading from intermediate state\n");
+    printf("Note: This requires proper state data from external source\n");
+    
+    // Example of how to use intermediate state
+    // In real use, state would be loaded from file or network
+    sha3_intermediate_state_t saved_state = {0};
+    saved_state.variant = SHA3_256;
+    saved_state.output_len = SHA3_256_DIGEST_SIZE;
+    saved_state.r = 1088;  // SHA3-256 rate in bits
+    saved_state.c = 512;   // SHA3-256 capacity in bits
+    saved_state.n = 256;   // Output size in bits
+    saved_state.b = 1600;  // State size
+    saved_state.w = 64;    // Word size
+    saved_state.l = 6;     // log2(w)
+    saved_state.nr = 24;   // Number of rounds
+    
+    // In real scenario, saved_state.state_bytes would contain actual state data
+    // For demo, we'll just show the API usage
+    uint8_t final_data[] = "Additional data to hash";
+    uint8_t state_hash[SHA3_256_DIGEST_SIZE];
+    
+    // This would work if state_bytes contained valid state
+    // sha3_final_from_state(&saved_state, final_data, sizeof(final_data)-1, state_hash);
+    printf("(Skipped - requires valid state data)\n");
+    
+    // Test 7: All hash variants
+    printf("\nTest 7: Testing all SHA-3 variants\n");
+    const char *test_msg = "The quick brown fox jumps over the lazy dog";
+    
+    // SHA3-224
+    sha3_ctx_t ctx224;
+    uint8_t hash224[SHA3_224_DIGEST_SIZE];
+    sha3_init(&ctx224, SHA3_224, 0);
+    sha3_update(&ctx224, (uint8_t*)test_msg, strlen(test_msg));
+    sha3_final(&ctx224, hash224);
+    printf("SHA3-224: ");
+    print_hex(hash224, SHA3_224_DIGEST_SIZE);
+    sha3_free(&ctx224);
+    
+    // SHA3-384
+    sha3_ctx_t ctx384;
+    uint8_t hash384[SHA3_384_DIGEST_SIZE];
+    sha3_init(&ctx384, SHA3_384, 0);
+    sha3_update(&ctx384, (uint8_t*)test_msg, strlen(test_msg));
+    sha3_final(&ctx384, hash384);
+    printf("SHA3-384: ");
+    print_hex(hash384, SHA3_384_DIGEST_SIZE);
+    sha3_free(&ctx384);
+    
+    // SHA3-512
+    sha3_ctx_t ctx512;
+    uint8_t hash512[SHA3_512_DIGEST_SIZE];
+    sha3_init(&ctx512, SHA3_512, 0);
+    sha3_update(&ctx512, (uint8_t*)test_msg, strlen(test_msg));
+    sha3_final(&ctx512, hash512);
+    printf("SHA3-512: ");
+    print_hex(hash512, SHA3_512_DIGEST_SIZE);
+    sha3_free(&ctx512);
+    
+    printf("\n=== All tests completed ===\n");
     
     return 0;
 }
