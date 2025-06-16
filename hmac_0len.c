@@ -3,57 +3,45 @@
 #include <libkeccak.h>
 
 int main() {
-    // Input key: 34 bytes of 0x00
+    // 34-byte key (all 0s)
     unsigned char key[34] = {0};
 
     // Empty message
-    const char *message = "";
-    size_t message_len = 0;
+    const unsigned char *message = (unsigned char *)"";
+    size_t msglen = 0;
 
-    // Keccak spec for SHA3-256
-    struct libkeccak_spec spec;
-    spec.capacity = 512;  // SHA3-256 → capacity = 512
-    spec.output = 256;    // Output bits
-
-    // HMAC state
-    struct libkeccak_hmac_state hmac_state;
-    // General Keccak state (used internally)
-    struct libkeccak_state state;
-
-    // Initialise Keccak state
-    if (libkeccak_state_initialise(&state, &spec)) {
-        fprintf(stderr, "libkeccak_state_initialise failed\n");
-        return 1;
-    }
-
-    // Initialise HMAC
-    if (libkeccak_hmac_initialise(&hmac_state, &state, &spec, key, sizeof(key))) {
-        fprintf(stderr, "libkeccak_hmac_initialise failed\n");
-        return 1;
-    }
-
-    // Update with message (empty)
-    if (libkeccak_hmac_update(&hmac_state, message, message_len)) {
-        fprintf(stderr, "libkeccak_hmac_update failed\n");
-        return 1;
-    }
-
-    // Finalise and get digest
+    // Output buffer
     unsigned char digest[32];
-    if (libkeccak_hmac_final(&hmac_state, &state, &spec, digest)) {
-        fprintf(stderr, "libkeccak_hmac_final failed\n");
+    size_t digestlen = sizeof(digest);
+
+    // Step 1: Define Keccak specification
+    struct libkeccak_spec spec;
+    spec.capacity = 512;  // SHA3-256 → capacity = 512 bits
+    spec.output = 256;    // output bits
+
+    // Step 2: Initialize HMAC state
+    struct libkeccak_hmac_state state;
+    if (libkeccak_hmac_initialise(&state, &spec) < 0) {
+        fprintf(stderr, "Error: libkeccak_hmac_initialise failed\n");
         return 1;
     }
 
-    // Print the digest
-    for (int i = 0; i < 32; i++) {
-        printf("%02x", digest[i]);
+    // Step 3: Set the key
+    if (libkeccak_hmac_set_key(&state, key, sizeof(key)) < 0) {
+        fprintf(stderr, "Error: libkeccak_hmac_set_key failed\n");
+        libkeccak_hmac_destroy(&state);
+        return 1;
     }
-    printf("\n");
 
-    // Free state
-    libkeccak_hmac_destroy(&hmac_state);
-    libkeccak_state_destroy(&state);
+    // Step 4: Feed the message (empty)
+    if (libkeccak_hmac_update(&state, message, msglen) < 0) {
+        fprintf(stderr, "Error: libkeccak_hmac_update failed\n");
+        libkeccak_hmac_destroy(&state);
+        return 1;
+    }
 
-    return 0;
-}
+    // Step 5: Finalize and get digest
+    if (libkeccak_hmac_digest(&state, digest, &digestlen) < 0) {
+        fprintf(stderr, "Error: libkeccak_hmac_digest failed\n");
+        libkeccak_hmac_destroy(&state);
+        retur
