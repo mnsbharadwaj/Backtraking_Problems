@@ -1,62 +1,63 @@
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <libkeccak.h>
 
-int main() {
-    // 1. Key: 34 bytes of 0x00
+int main(void) {
+    // Step 1: Define key (34 bytes of 0)
     unsigned char key[34] = {0};
 
-    // 2. Empty message
-    const unsigned char *message = (const unsigned char *)"";
-    size_t message_len = 0;
+    // Step 2: Empty message
+    const unsigned char *msg = (const unsigned char *)"";
+    size_t msglen = 0;
 
-    // 3. Output buffer for SHA3-256
-    unsigned char digest[32];
+    // Step 3: SHA3-256 spec
+    struct libkeccak_spec spec = {
+        .capacity = 512,
+        .output = 256
+    };
 
-    // 4. Keccak spec for SHA3-256
-    struct libkeccak_spec spec;
-    spec.capacity = 512;
-    spec.output = 256;
-
-    // 5. Parent state
-    struct libkeccak_state parent;
-    if (libkeccak_state_initialise(&parent, &spec) < 0) {
-        fprintf(stderr, "Failed to initialize parent state\n");
+    // Step 4: Initialize main keccak state
+    struct libkeccak_state state;
+    if (libkeccak_state_initialise(&state, &spec) < 0) {
+        fprintf(stderr, "Failed to init libkeccak_state\n");
         return 1;
     }
 
-    // 6. HMAC state
+    // Step 5: Initialize HMAC
     struct libkeccak_hmac_state hmac;
-    if (libkeccak_hmac_initialise(&hmac, &parent, &spec, key, sizeof(key)) < 0) {
-        fprintf(stderr, "Failed to initialize HMAC\n");
-        libkeccak_state_destroy(&parent);
+    if (libkeccak_hmac_initialise(&hmac, &state, &spec, key, sizeof(key)) < 0) {
+        fprintf(stderr, "Failed to init HMAC\n");
+        libkeccak_state_destroy(&state);
         return 1;
     }
 
-    // 7. Feed message
-    if (libkeccak_hmac_update(&hmac, message, message_len) < 0) {
-        fprintf(stderr, "Failed to update HMAC\n");
+    // Step 6: Update HMAC with message
+    if (libkeccak_hmac_update(&hmac, msg, msglen) < 0) {
+        fprintf(stderr, "HMAC update failed\n");
         libkeccak_hmac_destroy(&hmac);
-        libkeccak_state_destroy(&parent);
+        libkeccak_state_destroy(&state);
         return 1;
     }
 
-    // 8. Finalize and get digest
-    if (libkeccak_hmac_digest(&hmac, &parent, &spec, digest, sizeof(digest)) < 0) {
-        fprintf(stderr, "Failed to finalize HMAC\n");
+    // Step 7: Finalize and get digest
+    unsigned char digest[32];
+    if (libkeccak_hmac_digest(&hmac, &state, &spec, digest, sizeof(digest)) < 0) {
+        fprintf(stderr, "HMAC digest failed\n");
         libkeccak_hmac_destroy(&hmac);
-        libkeccak_state_destroy(&parent);
+        libkeccak_state_destroy(&state);
         return 1;
     }
 
-    // 9. Output digest
-    for (int i = 0; i < sizeof(digest); i++)
+    // Step 8: Print the digest
+    printf("HMAC-SHA3-256: ");
+    for (int i = 0; i < 32; i++)
         printf("%02x", digest[i]);
     printf("\n");
 
-    // 10. Cleanup
+    // Step 9: Cleanup
     libkeccak_hmac_destroy(&hmac);
-    libkeccak_state_destroy(&parent);
+    libkeccak_state_destroy(&state);
 
     return 0;
 }
