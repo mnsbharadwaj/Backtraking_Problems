@@ -44,4 +44,16 @@ int main() {
     if (libkeccak_hmac_digest(&state, digest, &digestlen) < 0) {
         fprintf(stderr, "Error: libkeccak_hmac_digest failed\n");
         libkeccak_hmac_destroy(&state);
-        retur
+        return 1;
+    }
+
+    // Step 6: Print the digest
+    for (size_t i = 0; i < digestlen; ++i) {
+        printf("%02x", digest[i]);
+    }
+    printf("\n");
+
+    // Step 7: Clean up
+    libkeccak_hmac_destroy(&state);
+    return 0;
+}
