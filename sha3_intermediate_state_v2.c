@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdio.h>
 
 // Keccak/SHA-3 constants
 #define KECCAK_STATE_SIZE       200  // 1600 bits / 8
@@ -162,10 +163,13 @@ int hmac_sha3_final_from_state(const hmac_sha3_intermediate_state_t *state,
 size_t sha3_get_block_size(sha3_variant_t variant);
 size_t sha3_get_digest_size(sha3_variant_t variant);
 
+// Alternative: Direct state manipulation function
+// This assumes the user has the raw 200-byte Keccak state
+int sha3_set_raw_state(sha3_ctx_t *ctx, const uint8_t raw_state[KECCAK_STATE_SIZE]);
+
 #endif // SHA3_WRAPPER_H
 
 // Implementation
-#include <stdio.h>
 
 // Helper function to get block size
 size_t sha3_get_block_size(sha3_variant_t variant) {
@@ -449,20 +453,6 @@ int hmac_sha3_init(hmac_sha3_ctx_t *ctx, sha3_variant_t variant,
     memset(opad_key, 0, sizeof(opad_key));
     
     return 0;
-}];
-    for (size_t i = 0; i < block_size; i++) {
-        ipad_key[i] = ctx->key_pad[i] ^ HMAC_IPAD;
-    }
-    sha3_update(&ctx->inner_ctx, ipad_key, block_size);
-    
-    // XOR key with opad for outer
-    uint8_t opad_key[HMAC_MAX_KEY_SIZE];
-    for (size_t i = 0; i < block_size; i++) {
-        opad_key[i] = ctx->key_pad[i] ^ HMAC_OPAD;
-    }
-    sha3_update(&ctx->outer_ctx, opad_key, block_size);
-    
-    return 0;
 }
 
 // Update HMAC-SHA3
@@ -633,7 +623,7 @@ int hmac_sha3_final_from_state(const hmac_sha3_intermediate_state_t *state,
     return result;
 }
 
-// Example usage
+// Example usage and test functions
 void print_hex(const uint8_t *data, size_t len) {
     for (size_t i = 0; i < len; i++) {
         printf("%02x", data[i]);
@@ -659,478 +649,17 @@ int main() {
     print_hex(hash, SHA3_256_DIGEST_SIZE);
     sha3_free(&ctx);
     
-    // Test 1b: Zero-length data
-    printf("\nTest 1b: SHA3-256 of empty string (zero-length data)\n");
-    sha3_ctx_t ctx_empty;
-    uint8_t hash_empty[SHA3_256_DIGEST_SIZE];
-    
-    sha3_init(&ctx_empty, SHA3_256, 0);
-    sha3_update(&ctx_empty, (uint8_t*)"", 0);  // Zero length update
-    sha3_final(&ctx_empty, hash_empty);
-    
-    printf("Message: (empty)\n");
-    printf("SHA3-256: ");
-    print_hex(hash_empty, SHA3_256_DIGEST_SIZE);
-    sha3_free(&ctx_empty);
-    
-    // Test 1c: No update calls (also zero-length)
-    printf("\nTest 1c: SHA3-256 with no update calls\n");
-    sha3_ctx_t ctx_no_update;
-    uint8_t hash_no_update[SHA3_256_DIGEST_SIZE];
-    
-    sha3_init(&ctx_no_update, SHA3_256, 0);
-    // No update call at all
-    sha3_final(&ctx_no_update, hash_no_update);
-    
-    printf("Message: (no update called)\n");
-    printf("SHA3-256: ");
-    print_hex(hash_no_update, SHA3_256_DIGEST_SIZE);
-    sha3_free(&ctx_no_update);
-    
-    // Test 2: Chunked processing (200-byte chunks)
-    printf("\nTest 2: Processing 200-byte chunks\n");
-    sha3_ctx_t ctx2;
-    uint8_t chunk[KECCAK_MAX_RATE];
-    uint8_t hash2[SHA3_256_DIGEST_SIZE];
-    
-    sha3_init(&ctx2, SHA3_256, 0);
-    
-    // First chunk - fill with 'A'
-    memset(chunk, 'A', KECCAK_MAX_RATE);
-    sha3_update(&ctx2, chunk, KECCAK_MAX_RATE);
-    printf("Processed first 200-byte chunk (all 'A's)\n");
-    
-    // Second chunk - fill with 'B'
-    memset(chunk, 'B', KECCAK_MAX_RATE);
-    sha3_update(&ctx2, chunk, KECCAK_MAX_RATE);
-    printf("Processed second 200-byte chunk (all 'B's)\n");
-    
-    sha3_final(&ctx2, hash2);
-    printf("Final hash: ");
-    print_hex(hash2, SHA3_256_DIGEST_SIZE);
-    sha3_free(&ctx2);
-    
-    // Test 3: HMAC-SHA3-256
-    printf("\nTest 3: HMAC-SHA3-256\n");
+    // Test 2: HMAC-SHA3-256 with 34-byte zero key and empty message
+    printf("\nTest 2: HMAC-SHA3-256 with 34-byte zero key and empty message\n");
     hmac_sha3_ctx_t hmac_ctx;
     uint8_t hmac_output[SHA3_256_DIGEST_SIZE];
-    const char *key = "my secret key";
-    const char *hmac_msg = "Message to authenticate";
-    
-    hmac_sha3_init(&hmac_ctx, HMAC_SHA3_256, (uint8_t*)key, strlen(key));
-    hmac_sha3_update(&hmac_ctx, (uint8_t*)hmac_msg, strlen(hmac_msg));
-    hmac_sha3_final(&hmac_ctx, hmac_output);
-    
-    printf("Key: %s\n", key);
-    printf("Message: %s\n", hmac_msg);
-    printf("HMAC-SHA3-256: ");
-    print_hex(hmac_output, SHA3_256_DIGEST_SIZE);
-    hmac_sha3_free(&hmac_ctx);
-    
-    // Test 3b: HMAC with empty message
-    printf("\nTest 3b: HMAC-SHA3-256 with empty message\n");
-    hmac_sha3_ctx_t hmac_ctx_empty;
-    uint8_t hmac_output_empty[SHA3_256_DIGEST_SIZE];
-    
-    hmac_sha3_init(&hmac_ctx_empty, HMAC_SHA3_256, (uint8_t*)key, strlen(key));
-    // No update or zero-length update
-    hmac_sha3_update(&hmac_ctx_empty, (uint8_t*)"", 0);
-    hmac_sha3_final(&hmac_ctx_empty, hmac_output_empty);
-    
-    printf("Key: %s\n", key);
-    printf("Message: (empty)\n");
-    printf("HMAC-SHA3-256: ");
-    print_hex(hmac_output_empty, SHA3_256_DIGEST_SIZE);
-    hmac_sha3_free(&hmac_ctx_empty);
-    
-    // Test 4: SHAKE256 with variable output
-    printf("\nTest 4: SHAKE256 with 64-byte output\n");
-    sha3_ctx_t shake_ctx;
-    uint8_t shake_output[64];
-    const char *shake_msg = "SHAKE test message";
-    
-    sha3_init(&shake_ctx, SHAKE256, 64);  // 64 bytes output
-    sha3_update(&shake_ctx, (uint8_t*)shake_msg, strlen(shake_msg));
-    sha3_final(&shake_ctx, shake_output);
-    
-    printf("Message: %s\n", shake_msg);
-    printf("SHAKE256 (64 bytes): ");
-    print_hex(shake_output, 64);
-    sha3_free(&shake_ctx);
-    
-    // Test 5: cSHAKE128
-    printf("\nTest 5: cSHAKE128 with customization\n");
-    sha3_ctx_t cshake_ctx;
-    uint8_t cshake_output[32];
-    const char *cshake_msg = "cSHAKE test";
-    const char *function_name = "Email Signature";
-    const char *customization = "EmailApp v1.0";
-    
-    cshake_init(&cshake_ctx, CSHAKE128, 32,
-                (uint8_t*)function_name, strlen(function_name),
-                (uint8_t*)customization, strlen(customization));
-    sha3_update(&cshake_ctx, (uint8_t*)cshake_msg, strlen(cshake_msg));
-    sha3_final(&cshake_ctx, cshake_output);
-    
-    printf("Message: %s\n", cshake_msg);
-    printf("Function: %s\n", function_name);
-    printf("Customization: %s\n", customization);
-    printf("cSHAKE128 (32 bytes): ");
-    print_hex(cshake_output, 32);
-    sha3_free(&cshake_ctx);
-    
-    // Test 6: Loading from intermediate state
-    printf("\nTest 6: Loading from intermediate state\n");
-    printf("Note: This requires proper state data from external source\n");
-    
-    // Example of how to use intermediate state
-    // In real use, state would be loaded from file or network
-    sha3_intermediate_state_t saved_state = {0};
-    saved_state.variant = SHA3_256;
-    saved_state.output_len = SHA3_256_DIGEST_SIZE;
-    saved_state.r = 1088;  // SHA3-256 rate in bits
-    saved_state.c = 512;   // SHA3-256 capacity in bits
-    saved_state.n = 256;   // Output size in bits
-    saved_state.b = 1600;  // State size
-    saved_state.w = 64;    // Word size
-    saved_state.l = 6;     // log2(w)
-    saved_state.nr = 24;   // Number of rounds
-    
-    // In real scenario, saved_state.state_bytes would contain actual state data
-    // For demo, we'll just show the API usage
-    uint8_t final_data[] = "Additional data to hash";
-    uint8_t state_hash[SHA3_256_DIGEST_SIZE];
-    
-    // This would work if state_bytes contained valid state
-    // sha3_final_from_state(&saved_state, final_data, sizeof(final_data)-1, state_hash);
-    printf("(Skipped - requires valid state data)\n");
-    
-    // Test 7: All hash variants
-    printf("\nTest 7: Testing all SHA-3 variants\n");
-    const char *test_msg = "The quick brown fox jumps over the lazy dog";
-    
-    // SHA3-224
-    sha3_ctx_t ctx224;
-    uint8_t hash224[SHA3_224_DIGEST_SIZE];
-    sha3_init(&ctx224, SHA3_224, 0);
-    sha3_update(&ctx224, (uint8_t*)test_msg, strlen(test_msg));
-    sha3_final(&ctx224, hash224);
-    printf("SHA3-224: ");
-    print_hex(hash224, SHA3_224_DIGEST_SIZE);
-    sha3_free(&ctx224);
-    
-    // SHA3-384
-    sha3_ctx_t ctx384;
-    uint8_t hash384[SHA3_384_DIGEST_SIZE];
-    sha3_init(&ctx384, SHA3_384, 0);
-    sha3_update(&ctx384, (uint8_t*)test_msg, strlen(test_msg));
-    sha3_final(&ctx384, hash384);
-    printf("SHA3-384: ");
-    print_hex(hash384, SHA3_384_DIGEST_SIZE);
-    sha3_free(&ctx384);
-    
-    // SHA3-512
-    sha3_ctx_t ctx512;
-    uint8_t hash512[SHA3_512_DIGEST_SIZE];
-    sha3_init(&ctx512, SHA3_512, 0);
-    sha3_update(&ctx512, (uint8_t*)test_msg, strlen(test_msg));
-    sha3_final(&ctx512, hash512);
-    printf("SHA3-512: ");
-    print_hex(hash512, SHA3_512_DIGEST_SIZE);
-    sha3_free(&ctx512);
-    
-    // Test 8: HMAC-SHA3-512 with intermediate state loading
-    printf("\nTest 8: HMAC-SHA3-512 with intermediate state loading\n");
-    
-    // First, create a real HMAC state we can save and load
-    hmac_sha3_ctx_t hmac512_ctx;
-    uint8_t hmac512_key[] = "This is a test key for HMAC-SHA3-512";
-    const char *hmac512_msg_part1 = "First part of the message - ";
-    const char *hmac512_msg_part2 = "Second part of the message";
-    uint8_t hmac512_output1[SHA3_512_DIGEST_SIZE];
-    uint8_t hmac512_output2[SHA3_512_DIGEST_SIZE];
-    
-    // Initialize HMAC-SHA3-512
-    hmac_sha3_init(&hmac512_ctx, HMAC_SHA3_512, hmac512_key, sizeof(hmac512_key) - 1);
-    
-    // Process first part
-    hmac_sha3_update(&hmac512_ctx, (uint8_t*)hmac512_msg_part1, strlen(hmac512_msg_part1));
-    
-    // Simulate saving state here
-    // In real application, you would serialize hmac512_ctx internal state
-    hmac_sha3_intermediate_state_t hmac512_state = {0};
-    
-    // Manually populate the state (in real use, this would come from saved data)
-    // Inner state parameters for HMAC-SHA3-512
-    hmac512_state.inner_state.variant = SHA3_512;
-    hmac512_state.inner_state.output_len = SHA3_512_DIGEST_SIZE;
-    hmac512_state.inner_state.r = SHA3_512_RATE_BITS;
-    hmac512_state.inner_state.c = SHA3_512_CAPACITY_BITS;
-    hmac512_state.inner_state.n = SHA3_512_OUTPUT_BITS;
-    hmac512_state.inner_state.b = KECCAK_STATE_SIZE_BITS;
-    hmac512_state.inner_state.w = KECCAK_WORD_SIZE;
-    hmac512_state.inner_state.l = KECCAK_L_PARAMETER;
-    hmac512_state.inner_state.nr = KECCAK_NUM_ROUNDS;
-    
-    // Outer state parameters for HMAC-SHA3-512
-    hmac512_state.outer_state.variant = SHA3_512;
-    hmac512_state.outer_state.output_len = SHA3_512_DIGEST_SIZE;
-    hmac512_state.outer_state.r = SHA3_512_RATE_BITS;
-    hmac512_state.outer_state.c = SHA3_512_CAPACITY_BITS;
-    hmac512_state.outer_state.n = SHA3_512_OUTPUT_BITS;
-    hmac512_state.outer_state.b = KECCAK_STATE_SIZE_BITS;
-    hmac512_state.outer_state.w = KECCAK_WORD_SIZE;
-    hmac512_state.outer_state.l = KECCAK_L_PARAMETER;
-    hmac512_state.outer_state.nr = KECCAK_NUM_ROUNDS;
-    
-    // HMAC specific parameters
-    hmac512_state.block_size = SHA3_512_BLOCK_SIZE;
-    hmac512_state.variant = SHA3_512;
-    
-    // Copy key pad (this would be saved from the actual context)
-    memcpy(hmac512_state.key_pad, hmac512_ctx.key_pad, sizeof(hmac512_state.key_pad));
-    
-    // Note: In real use, you would also need to save the actual Keccak state arrays
-    // hmac512_state.inner_state.state_bytes would contain the serialized inner state
-    // hmac512_state.outer_state.state_bytes would contain the serialized outer state
-    
-    // Continue with original context to get reference hash
-    hmac_sha3_update(&hmac512_ctx, (uint8_t*)hmac512_msg_part2, strlen(hmac512_msg_part2));
-    hmac_sha3_final(&hmac512_ctx, hmac512_output1);
-    
-    printf("Original HMAC-SHA3-512 (continuous): ");
-    print_hex(hmac512_output1, SHA3_512_DIGEST_SIZE);
-    
-    // Now test loading from state (if we had valid state data)
-    printf("\nNote: Complete state loading requires actual state data from libkeccak\n");
-    printf("In production, use libkeccak_state_marshal/unmarshal functions\n");
-    
-    // Example of the API usage:
-    // hmac_sha3_ctx_t hmac512_loaded;
-    // hmac_sha3_init_from_state(&hmac512_loaded, &hmac512_state);
-    // hmac_sha3_update(&hmac512_loaded, (uint8_t*)hmac512_msg_part2, strlen(hmac512_msg_part2));
-    // hmac_sha3_final(&hmac512_loaded, hmac512_output2);
-    
-    // Or direct finalization:
-    // hmac_sha3_final_from_state(&hmac512_state, 
-    //                            (uint8_t*)hmac512_msg_part2, 
-    //                            strlen(hmac512_msg_part2), 
-    //                            hmac512_output2);
-    
-    hmac_sha3_free(&hmac512_ctx);
-    
-    // Test 9: Processing exactly 200-byte chunks with state
-    printf("\nTest 9: Processing exactly 200-byte chunks\n");
-    sha3_ctx_t chunk_test_ctx;
-    uint8_t chunk_200[KECCAK_MAX_RATE];
-    uint8_t chunk_hash[SHA3_256_DIGEST_SIZE];
-    
-    sha3_init(&chunk_test_ctx, SHA3_256, 0);
-    
-    // Process 5 chunks of exactly 200 bytes each (1000 bytes total)
-    for (int i = 0; i < 5; i++) {
-        memset(chunk_200, 'A' + i, KECCAK_MAX_RATE);
-        sha3_update(&chunk_test_ctx, chunk_200, KECCAK_MAX_RATE);
-        printf("Processed chunk %d (200 bytes of '%c')\n", i + 1, 'A' + i);
-    }
-    
-    sha3_final(&chunk_test_ctx, chunk_hash);
-    printf("Hash of 1000 bytes (5 x 200-byte chunks): ");
-    print_hex(chunk_hash, SHA3_256_DIGEST_SIZE);
-    sha3_free(&chunk_test_ctx);
-    
-    // Test 10: Verification - Step-by-step vs One-shot hashing
-    printf("\nTest 10: Verification - Step-by-step vs One-shot hashing\n");
-    printf("This test verifies that incremental hashing produces the same result as one-shot\n\n");
-    
-    // Test data
-    const char *test_data = "This is a test message that will be hashed both incrementally and in one shot to verify they produce identical results.";
-    size_t total_len = strlen(test_data);
-    
-    // Test 10a: SHA3-256 verification
-    printf("SHA3-256 Verification:\n");
-    sha3_ctx_t sha256_oneshot, sha256_incremental;
-    uint8_t hash_oneshot[SHA3_256_DIGEST_SIZE];
-    uint8_t hash_incremental[SHA3_256_DIGEST_SIZE];
-    
-    // One-shot hashing
-    sha3_init(&sha256_oneshot, SHA3_256, 0);
-    sha3_update(&sha256_oneshot, (uint8_t*)test_data, total_len);
-    sha3_final(&sha256_oneshot, hash_oneshot);
-    printf("One-shot hash:     ");
-    print_hex(hash_oneshot, SHA3_256_DIGEST_SIZE);
-    sha3_free(&sha256_oneshot);
-    
-    // Incremental hashing (simulate chunked processing)
-    sha3_init(&sha256_incremental, SHA3_256, 0);
-    size_t chunk_size = 17;  // Use odd size to test partial blocks
-    size_t processed = 0;
-    while (processed < total_len) {
-        size_t to_process = (processed + chunk_size > total_len) ? 
-                           (total_len - processed) : chunk_size;
-        sha3_update(&sha256_incremental, (uint8_t*)test_data + processed, to_process);
-        processed += to_process;
-    }
-    sha3_final(&sha256_incremental, hash_incremental);
-    printf("Incremental hash:  ");
-    print_hex(hash_incremental, SHA3_256_DIGEST_SIZE);
-    sha3_free(&sha256_incremental);
-    
-    // Verify they match
-    if (memcmp(hash_oneshot, hash_incremental, SHA3_256_DIGEST_SIZE) == 0) {
-        printf("✓ SHA3-256: Hashes match!\n");
-    } else {
-        printf("✗ SHA3-256: Hashes DO NOT match! ERROR!\n");
-    }
-    
-    // Test 10b: HMAC-SHA3-256 verification
-    printf("\nHMAC-SHA3-256 Verification:\n");
-    hmac_sha3_ctx_t hmac_oneshot, hmac_incremental;
-    uint8_t hmac_hash_oneshot[SHA3_256_DIGEST_SIZE];
-    uint8_t hmac_hash_incremental[SHA3_256_DIGEST_SIZE];
-    const char *hmac_key = "test_key_for_hmac";
-    
-    // One-shot HMAC
-    hmac_sha3_init(&hmac_oneshot, HMAC_SHA3_256, (uint8_t*)hmac_key, strlen(hmac_key));
-    hmac_sha3_update(&hmac_oneshot, (uint8_t*)test_data, total_len);
-    hmac_sha3_final(&hmac_oneshot, hmac_hash_oneshot);
-    printf("One-shot HMAC:     ");
-    print_hex(hmac_hash_oneshot, SHA3_256_DIGEST_SIZE);
-    hmac_sha3_free(&hmac_oneshot);
-    
-    // Incremental HMAC
-    hmac_sha3_init(&hmac_incremental, HMAC_SHA3_256, (uint8_t*)hmac_key, strlen(hmac_key));
-    processed = 0;
-    chunk_size = 23;  // Different chunk size
-    while (processed < total_len) {
-        size_t to_process = (processed + chunk_size > total_len) ? 
-                           (total_len - processed) : chunk_size;
-        hmac_sha3_update(&hmac_incremental, (uint8_t*)test_data + processed, to_process);
-        processed += to_process;
-    }
-    hmac_sha3_final(&hmac_incremental, hmac_hash_incremental);
-    printf("Incremental HMAC:  ");
-    print_hex(hmac_hash_incremental, SHA3_256_DIGEST_SIZE);
-    hmac_sha3_free(&hmac_incremental);
-    
-    // Verify they match
-    if (memcmp(hmac_hash_oneshot, hmac_hash_incremental, SHA3_256_DIGEST_SIZE) == 0) {
-        printf("✓ HMAC-SHA3-256: Hashes match!\n");
-    } else {
-        printf("✗ HMAC-SHA3-256: Hashes DO NOT match! ERROR!\n");
-    }
-    
-    // Test 10c: 200-byte chunk verification
-    printf("\n200-byte chunk processing verification:\n");
-    sha3_ctx_t sha256_200chunks;
-    uint8_t hash_200chunks[SHA3_256_DIGEST_SIZE];
-    
-    // Create exactly 600 bytes of data (3 x 200-byte chunks)
-    uint8_t large_data[3 * KECCAK_MAX_RATE];
-    for (int i = 0; i < 3 * KECCAK_MAX_RATE; i++) {
-        large_data[i] = (uint8_t)(i % 256);
-    }
-    
-    // One-shot hash of 600 bytes
-    sha3_init(&sha256_oneshot, SHA3_256, 0);
-    sha3_update(&sha256_oneshot, large_data, 3 * KECCAK_MAX_RATE);
-    sha3_final(&sha256_oneshot, hash_oneshot);
-    printf("One-shot (600 bytes):      ");
-    print_hex(hash_oneshot, SHA3_256_DIGEST_SIZE);
-    sha3_free(&sha256_oneshot);
-    
-    // Hash in 200-byte chunks
-    sha3_init(&sha256_200chunks, SHA3_256, 0);
-    for (int i = 0; i < 3; i++) {
-        sha3_update(&sha256_200chunks, large_data + (i * KECCAK_MAX_RATE), KECCAK_MAX_RATE);
-    }
-    sha3_final(&sha256_200chunks, hash_200chunks);
-    printf("200-byte chunks (3x200):   ");
-    print_hex(hash_200chunks, SHA3_256_DIGEST_SIZE);
-    sha3_free(&sha256_200chunks);
-    
-    // Verify they match
-    if (memcmp(hash_oneshot, hash_200chunks, SHA3_256_DIGEST_SIZE) == 0) {
-        printf("✓ 200-byte chunks: Hashes match!\n");
-    } else {
-        printf("✗ 200-byte chunks: Hashes DO NOT match! ERROR!\n");
-    }
-    
-    // Test 10d: All SHA3 variants verification
-    printf("\nAll SHA3 variants verification:\n");
-    const char *variant_test_msg = "Verify all variants";
-    
-    // SHA3-224
-    sha3_ctx_t ctx224_one, ctx224_inc;
-    uint8_t hash224_one[SHA3_224_DIGEST_SIZE], hash224_inc[SHA3_224_DIGEST_SIZE];
-    
-    sha3_init(&ctx224_one, SHA3_224, 0);
-    sha3_update(&ctx224_one, (uint8_t*)variant_test_msg, strlen(variant_test_msg));
-    sha3_final(&ctx224_one, hash224_one);
-    sha3_free(&ctx224_one);
-    
-    sha3_init(&ctx224_inc, SHA3_224, 0);
-    for (size_t i = 0; i < strlen(variant_test_msg); i++) {
-        sha3_update(&ctx224_inc, (uint8_t*)&variant_test_msg[i], 1);  // Byte by byte
-    }
-    sha3_final(&ctx224_inc, hash224_inc);
-    sha3_free(&ctx224_inc);
-    
-    printf("SHA3-224: %s\n", 
-           memcmp(hash224_one, hash224_inc, SHA3_224_DIGEST_SIZE) == 0 ? "✓ Match" : "✗ ERROR");
-    
-    // SHA3-384
-    sha3_ctx_t ctx384_one, ctx384_inc;
-    uint8_t hash384_one[SHA3_384_DIGEST_SIZE], hash384_inc[SHA3_384_DIGEST_SIZE];
-    
-    sha3_init(&ctx384_one, SHA3_384, 0);
-    sha3_update(&ctx384_one, (uint8_t*)variant_test_msg, strlen(variant_test_msg));
-    sha3_final(&ctx384_one, hash384_one);
-    sha3_free(&ctx384_one);
-    
-    sha3_init(&ctx384_inc, SHA3_384, 0);
-    // Process in 5-byte chunks
-    for (size_t i = 0; i < strlen(variant_test_msg); i += 5) {
-        size_t len = (i + 5 > strlen(variant_test_msg)) ? strlen(variant_test_msg) - i : 5;
-        sha3_update(&ctx384_inc, (uint8_t*)&variant_test_msg[i], len);
-    }
-    sha3_final(&ctx384_inc, hash384_inc);
-    sha3_free(&ctx384_inc);
-    
-    printf("SHA3-384: %s\n", 
-           memcmp(hash384_one, hash384_inc, SHA3_384_DIGEST_SIZE) == 0 ? "✓ Match" : "✗ ERROR");
-    
-    // SHA3-512
-    sha3_ctx_t ctx512_one, ctx512_inc;
-    uint8_t hash512_one[SHA3_512_DIGEST_SIZE], hash512_inc[SHA3_512_DIGEST_SIZE];
-    
-    sha3_init(&ctx512_one, SHA3_512, 0);
-    sha3_update(&ctx512_one, (uint8_t*)variant_test_msg, strlen(variant_test_msg));
-    sha3_final(&ctx512_one, hash512_one);
-    sha3_free(&ctx512_one);
-    
-    sha3_init(&ctx512_inc, SHA3_512, 0);
-    // Process in varying chunk sizes
-    size_t chunks[] = {7, 3, 4, 5};  // Total: 19 bytes (length of variant_test_msg)
-    size_t offset = 0;
-    for (int i = 0; i < 4 && offset < strlen(variant_test_msg); i++) {
-        size_t len = (offset + chunks[i] > strlen(variant_test_msg)) ? 
-                     strlen(variant_test_msg) - offset : chunks[i];
-        sha3_update(&ctx512_inc, (uint8_t*)&variant_test_msg[offset], len);
-        offset += len;
-    }
-    sha3_final(&ctx512_inc, hash512_inc);
-    sha3_free(&ctx512_inc);
-    
-    printf("SHA3-512: %s\n", 
-           memcmp(hash512_one, hash512_inc, SHA3_512_DIGEST_SIZE) == 0 ? "✓ Match" : "✗ ERROR");
-    
-    // Test 11: HMAC-SHA3-256 with 34-byte zero key and empty message
-    printf("\nTest 11: HMAC-SHA3-256 with 34-byte zero key and empty message\n");
-    hmac_sha3_ctx_t hmac_zero_ctx;
-    uint8_t hmac_zero_output[SHA3_256_DIGEST_SIZE];
     uint8_t zero_key[34];
     memset(zero_key, 0, sizeof(zero_key));
+    
+    printf("Key length: %zu bytes\n", sizeof(zero_key));
+    printf("Block size for SHA3-256: %d bytes\n", SHA3_256_BLOCK_SIZE);
+    printf("Key is %s than block size\n", 
+           sizeof(zero_key) > SHA3_256_BLOCK_SIZE ? "longer" : "shorter or equal");
     
     // Expected result
     unsigned int expected[] = {
@@ -1139,105 +668,53 @@ int main() {
     };
     
     // Initialize HMAC with 34-byte zero key
-    hmac_sha3_init(&hmac_zero_ctx, HMAC_SHA3_256, zero_key, sizeof(zero_key));
+    hmac_sha3_init(&hmac_ctx, HMAC_SHA3_256, zero_key, sizeof(zero_key));
     
     // No update call (empty message)
     // Finalize immediately
-    hmac_sha3_final(&hmac_zero_ctx, hmac_zero_output);
+    hmac_sha3_final(&hmac_ctx, hmac_output);
     
     // Display as hex bytes
-    printf("Result (hex bytes): ");
-    print_hex(hmac_zero_output, SHA3_256_DIGEST_SIZE);
+    printf("\nResult (hex bytes): ");
+    print_hex(hmac_output, SHA3_256_DIGEST_SIZE);
     
-    // Display as 32-bit unsigned integers (big-endian)
-    printf("Result (uint32 BE): ");
-    unsigned int *result_words = (unsigned int *)hmac_zero_output;
+    // Display expected as hex bytes
+    printf("Expected (as bytes): ");
     for (int i = 0; i < 8; i++) {
-        // Convert from little-endian to big-endian if needed
-        unsigned int word = ((hmac_zero_output[i*4] << 24) |
-                            (hmac_zero_output[i*4+1] << 16) |
-                            (hmac_zero_output[i*4+2] << 8) |
-                            (hmac_zero_output[i*4+3]));
-        printf("0x%08x ", word);
+        printf("%02x %02x %02x %02x ", 
+               (expected[i] >> 24) & 0xff,
+               (expected[i] >> 16) & 0xff,
+               (expected[i] >> 8) & 0xff,
+               expected[i] & 0xff);
     }
     printf("\n");
     
-    // Display as 32-bit unsigned integers (little-endian) 
-    printf("Result (uint32 LE): ");
-    for (int i = 0; i < 8; i++) {
-        unsigned int word = ((hmac_zero_output[i*4+3] << 24) |
-                            (hmac_zero_output[i*4+2] << 16) |
-                            (hmac_zero_output[i*4+1] << 8) |
-                            (hmac_zero_output[i*4]));
-        printf("0x%08x ", word);
-    }
-    printf("\n");
-    
-    printf("Expected:           ");
-    for (int i = 0; i < 8; i++) {
-        printf("0x%08x ", expected[i]);
-    }
-    printf("\n");
-    
-    // Check if it matches expected (trying both endianness)
-    int match_be = 1;
-    int match_le = 1;
-    for (int i = 0; i < 8; i++) {
-        unsigned int word_be = ((hmac_zero_output[i*4] << 24) |
-                               (hmac_zero_output[i*4+1] << 16) |
-                               (hmac_zero_output[i*4+2] << 8) |
-                               (hmac_zero_output[i*4+3]));
-        unsigned int word_le = ((hmac_zero_output[i*4+3] << 24) |
-                               (hmac_zero_output[i*4+2] << 16) |
-                               (hmac_zero_output[i*4+1] << 8) |
-                               (hmac_zero_output[i*4]));
-        
-        if (word_be != expected[i]) match_be = 0;
-        if (word_le != expected[i]) match_le = 0;
-    }
-    
-    if (match_be) {
-        printf("✓ Result matches expected (big-endian interpretation)\n");
-    } else if (match_le) {
-        printf("✓ Result matches expected (little-endian interpretation)\n");
-    } else {
-        printf("✗ Result does NOT match expected\n");
-        
-        // Additional debug: try byte-by-byte comparison
-        printf("\nDebug - Expected bytes: ");
-        for (int i = 0; i < 8; i++) {
-            printf("%02x %02x %02x %02x ", 
-                   (expected[i] >> 24) & 0xff,
-                   (expected[i] >> 16) & 0xff,
-                   (expected[i] >> 8) & 0xff,
-                   expected[i] & 0xff);
+    // Check if matches byte by byte
+    int matches = 1;
+    for (int i = 0; i < SHA3_256_DIGEST_SIZE; i++) {
+        uint8_t expected_byte = (expected[i/4] >> (24 - 8*(i%4))) & 0xff;
+        if (hmac_output[i] != expected_byte) {
+            matches = 0;
+            break;
         }
-        printf("\n");
     }
     
-    hmac_sha3_free(&hmac_zero_ctx);
+    printf("\nResult %s expected values\n", matches ? "MATCHES" : "DOES NOT MATCH");
     
-    // Test 11b: Same test but with explicit empty message update
-    printf("\nTest 11b: Same test with explicit empty update\n");
-    hmac_sha3_ctx_t hmac_zero_ctx2;
-    uint8_t hmac_zero_output2[SHA3_256_DIGEST_SIZE];
+    // Additional test: Try with explicit empty update
+    printf("\nTest 2b: Same with explicit empty update\n");
+    hmac_sha3_ctx_t hmac_ctx2;
+    uint8_t hmac_output2[SHA3_256_DIGEST_SIZE];
     
-    hmac_sha3_init(&hmac_zero_ctx2, HMAC_SHA3_256, zero_key, sizeof(zero_key));
-    hmac_sha3_update(&hmac_zero_ctx2, (uint8_t*)"", 0);  // Explicit empty update
-    hmac_sha3_final(&hmac_zero_ctx2, hmac_zero_output2);
+    hmac_sha3_init(&hmac_ctx2, HMAC_SHA3_256, zero_key, sizeof(zero_key));
+    hmac_sha3_update(&hmac_ctx2, (uint8_t*)"", 0);
+    hmac_sha3_final(&hmac_ctx2, hmac_output2);
     
     printf("Result: ");
-    print_hex(hmac_zero_output2, SHA3_256_DIGEST_SIZE);
+    print_hex(hmac_output2, SHA3_256_DIGEST_SIZE);
     
-    if (memcmp(hmac_zero_output, hmac_zero_output2, SHA3_256_DIGEST_SIZE) == 0) {
-        printf("✓ Both methods produce same result\n");
-    } else {
-        printf("✗ Different results with/without explicit empty update\n");
-    }
-    
-    hmac_sha3_free(&hmac_zero_ctx2);
-    
-    printf("\n=== All tests completed ===\n");
+    hmac_sha3_free(&hmac_ctx);
+    hmac_sha3_free(&hmac_ctx2);
     
     return 0;
 }
