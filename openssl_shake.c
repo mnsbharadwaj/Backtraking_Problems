@@ -42,17 +42,32 @@ typedef struct {
 } openssl_cshake_ctx;
 
 int openssl_cshake_init(openssl_cshake_ctx *cctx, int is_cshake128, const char *custom) {
-    OSSL_PARAM params[4], *p = params;
     cctx->mac = EVP_MAC_fetch(NULL, "KMAC", NULL);
-    if (!cctx->mac) return -1;
+    if (!cctx->mac) {
+        fprintf(stderr, "KMAC fetch failed\n");
+        return -1;
+    }
+
     cctx->ctx = EVP_MAC_CTX_new(cctx->mac);
-    if (!cctx->ctx) return -1;
+    if (!cctx->ctx) {
+        fprintf(stderr, "KMAC_CTX_new failed\n");
+        EVP_MAC_free(cctx->mac);
+        return -1;
+    }
 
-    *p++ = OSSL_PARAM_utf8_string("digest", is_cshake128 ? "cshake128" : "cshake256", 0);
-    *p++ = OSSL_PARAM_utf8_string("custom", custom, 0);
-    *p = OSSL_PARAM_construct_end();
+    OSSL_PARAM params[] = {
+        OSSL_PARAM_utf8_string("digest", is_cshake128 ? "cshake128" : "cshake256", 0),
+        OSSL_PARAM_utf8_string("custom", custom, 0),
+        OSSL_PARAM_construct_end()
+    };
 
-    if (EVP_MAC_init(cctx->ctx, NULL, 0, params) != 1) return -1;
+    if (EVP_MAC_init(cctx->ctx, NULL, 0, params) != 1) {
+        fprintf(stderr, "KMAC init failed\n");
+        EVP_MAC_CTX_free(cctx->ctx);
+        EVP_MAC_free(cctx->mac);
+        return -1;
+    }
+
     return 0;
 }
 
