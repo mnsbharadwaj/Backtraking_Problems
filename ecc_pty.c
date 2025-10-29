@@ -69,6 +69,41 @@ void mont_mul(BIGNUM* r, const BIGNUM *a, const BIGNUM *b, BN_MONT_CTX* mont, BN
 void mont_exp(BIGNUM* r, const BIGNUM *a, const BIGNUM *e, const BIGNUM *m, BN_MONT_CTX* mont, BN_CTX* ctx) {
     if(!BN_mod_exp_mont(r, a, e, m, ctx, mont)) handleErrors();
 }
+#include <openssl/bn.h>
+#include <openssl/err.h>
+
+/*
+ * Computes R = 2^(chunksize + precision), 
+ * if mod is the modulus (m), and chunksize/precision are user parameters.
+ *
+ * result -- Output BIGNUM to hold R
+ * chunksize -- typically the field size in bits (e.g., 256)
+ * precision -- additional bits (commonly 32 for Montgomery, but adjustable)
+ * mod -- modulus BIGNUM
+ * ctx -- BN_CTX for memory management
+ *
+ * The function computes R = 2^(chunksize + precision) mod m
+ */
+int compute_montgomery_R(BIGNUM *result, int chunksize, int precision, const BIGNUM *mod, BN_CTX *ctx) {
+    BIGNUM *exp = BN_new();
+    BIGNUM *two = BN_new();
+    if (!exp || !two) return 0;
+
+    // exp = chunksize + precision
+    if (!BN_set_word(exp, chunksize + precision)) goto err;
+    if (!BN_set_word(two, 2)) goto err;
+
+    // Compute R = 2^(chunksize + precision) mod m
+    if (!BN_mod_exp(result, two, exp, mod, ctx)) goto err;
+
+    BN_free(exp);
+    BN_free(two);
+    return 1;
+err:
+    BN_free(exp);
+    BN_free(two);
+    return 0;
+}
 
 int main() {
     ERR_load_crypto_strings();
